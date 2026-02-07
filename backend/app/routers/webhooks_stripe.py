@@ -71,6 +71,10 @@ def _handle_checkout_completed(db: Session, data: dict):
         logger.warning(f"checkout.session.completed: metadata不足")
         return
 
+    if not stripe_subscription_id:
+        logger.warning(f"checkout.session.completed: subscription_id なし (無料プラン?)")
+        return
+
     user = db.query(User).filter(User.id == user_id).first()
     if user:
         # Stripe Customer ID更新
@@ -86,17 +90,42 @@ def _handle_checkout_completed(db: Session, data: dict):
     existing = db.query(Subscription).filter(
         Subscription.stripe_subscription_id == stripe_subscription_id
     ).first()
-    if not existing:
-        subscription_service.create_subscription_record(
-            db=db,
-            user_id=user_id,
-            plan_id=plan_id,
-            member_no=member_no,
-            stripe_subscription_id=stripe_subscription_id,
-            status="active",
-        )
+    if existing:
+        logger.info(f"Checkout完了: 購読は既に存在 user_id={user_id}, subscription_id={existing.id}")
+        return
 
-    logger.info(f"Checkout完了: user_id={user_id}, plan_id={plan_id}")
+    # Stripe Subscriptionから正確なステータスと期間情報を取得
+    status = "active"
+    trial_end = None
+    current_period_start = None
+    current_period_end = None
+    try:
+        stripe_sub = stripe_service.retrieve_subscription(stripe_subscription_id)
+        if stripe_sub:
+            status = stripe_sub.get("status", "active")
+            if stripe_sub.get("trial_end"):
+                trial_end = datetime.fromtimestamp(stripe_sub["trial_end"])
+            if stripe_sub.get("current_period_start"):
+                current_period_start = datetime.fromtimestamp(stripe_sub["current_period_start"])
+            if stripe_sub.get("current_period_end"):
+                current_period_end = datetime.fromtimestamp(stripe_sub["current_period_end"])
+            logger.info(f"Stripe Subscription取得: status={status}, trial_end={trial_end}")
+    except Exception as e:
+        logger.warning(f"Stripe Subscription取得失敗: {e}")
+
+    subscription_service.create_subscription_record(
+        db=db,
+        user_id=user_id,
+        plan_id=plan_id,
+        member_no=member_no,
+        stripe_subscription_id=stripe_subscription_id,
+        status=status,
+        trial_end=trial_end,
+        current_period_start=current_period_start,
+        current_period_end=current_period_end,
+    )
+
+    logger.info(f"Checkout完了: user_id={user_id}, plan_id={plan_id}, status={status}")
 
 
 def _handle_subscription_created(db: Session, data: dict):
