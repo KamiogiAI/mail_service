@@ -70,20 +70,6 @@ async def update_profile(
     return {"message": "プロフィールを更新しました"}
 
 
-@router.put("/password")
-async def change_password(
-    data: ChangePasswordRequest,
-    user: User = Depends(require_login),
-    db: Session = Depends(get_db),
-):
-    """パスワード変更（旧API - 後方互換性のため維持）"""
-    if not auth_service.verify_password(data.current_password, user.password_hash):
-        raise HTTPException(status_code=400, detail="現在のパスワードが正しくありません")
-    user.password_hash = auth_service.hash_password(data.new_password)
-    db.commit()
-    return {"message": "パスワードを変更しました"}
-
-
 @router.post("/password-change/request", response_model=PasswordChangeResponse)
 @limiter.limit(VERIFY_CODE_RATE_LIMIT)
 async def request_password_change(
