@@ -66,3 +66,49 @@ async def refresh_session_id(
     await r.expire(new_key, SESSION_TTL)
     await r.delete(old_key)
     return new_session_id
+
+
+async def invalidate_user_sessions(
+    r: aioredis.Redis,
+    user_id: int,
+    exclude_session_id: Optional[str] = None,
+) -> int:
+    """
+    指定ユーザーの全セッションを無効化する。
+
+    Args:
+        r: Redis接続
+        user_id: 無効化対象のユーザーID
+        exclude_session_id: 除外するセッションID（現在のセッションを維持する場合）
+
+    Returns:
+        削除したセッション数
+    """
+    deleted_count = 0
+    user_id_str = str(user_id)
+    cursor = 0
+
+    while True:
+        cursor, keys = await r.scan(cursor, match=f"{SESSION_PREFIX}*", count=100)
+        for key in keys:
+            # セッションIDを抽出
+            session_id = key.replace(SESSION_PREFIX, "") if isinstance(key, str) else key.decode().replace(SESSION_PREFIX, "")
+
+            # 除外対象ならスキップ
+            if exclude_session_id and session_id == exclude_session_id:
+                continue
+
+            # セッションのuser_idを確認
+            session_user_id = await r.hget(key, "user_id")
+            if session_user_id:
+                # bytes の場合はデコード
+                if isinstance(session_user_id, bytes):
+                    session_user_id = session_user_id.decode()
+                if session_user_id == user_id_str:
+                    await r.delete(key)
+                    deleted_count += 1
+
+        if cursor == 0:
+            break
+
+    return deleted_count

@@ -7,6 +7,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.redis import get_redis
 from app.core.rate_limit import limiter, VERIFY_CODE_RATE_LIMIT
+from app.core.session import invalidate_user_sessions
 from app.models.user import User
 from app.models.subscription import Subscription
 from app.models.plan import Plan
@@ -136,6 +137,10 @@ async def confirm_password_change(
     # パスワード更新
     user.password_hash = auth_service.hash_password(data.new_password)
     db.commit()
+
+    # 他のセッションを無効化（現在のセッションは維持）
+    current_session_id = request.cookies.get("session_id")
+    destroyed_count = await invalidate_user_sessions(r, user.id, exclude_session_id=current_session_id)
 
     return PasswordChangeResponse(message="パスワードを変更しました")
 
