@@ -61,7 +61,7 @@ def create_checkout_session(
     if stripe_promotion_code_id:
         params["discounts"] = [{"promotion_code": stripe_promotion_code_id}]
     else:
-        params["allow_promotion_codes"] = False
+        params["allow_promotion_codes"] = True
 
     if customer_id:
         params["customer"] = customer_id

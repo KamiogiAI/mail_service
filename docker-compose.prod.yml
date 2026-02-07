@@ -6,8 +6,6 @@ services:
   api:
     volumes:
       - ./backend:/app
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
     ports: []
     environment:
       - DEBUG=false
