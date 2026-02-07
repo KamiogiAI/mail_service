@@ -50,6 +50,12 @@
                         <div class="price">¥${plan.price.toLocaleString()}<span style="font-size:14px;font-weight:normal;color:#888;">/月</span></div>
                     </div>
                     ${questionsHtml}
+                    <div class="card" style="margin-top:16px;">
+                        <div class="form-group">
+                            <label>プロモーションコード（お持ちの方のみ）</label>
+                            <input type="text" id="promo-code" placeholder="コードを入力" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:4px;">
+                        </div>
+                    </div>
                     <button class="btn btn-block" onclick="subscribe()" style="margin-top:16px;">このプランに申し込む</button>
                     <div id="sub-error" class="error-message"></div>
                 `;
@@ -243,7 +249,12 @@
                 if (answers.length > 0) {
                     await API.post(`/api/me/answers/${planId}`, answers);
                 }
-                const res = await API.post('/api/subscribe', { plan_id: parseInt(planId) });
+                const promoCode = document.getElementById('promo-code')?.value?.trim() || '';
+                const body = { plan_id: parseInt(planId) };
+                if (promoCode) {
+                    body.promotion_code = promoCode;
+                }
+                const res = await API.post('/api/subscribe', body);
                 if (res.checkout_url) {
                     location.href = res.checkout_url;
                 } else {
