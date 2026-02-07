@@ -29,6 +29,7 @@ class SettingsUpdate(BaseModel):
     company_md: Optional[str] = None
     cancel_md: Optional[str] = None
     tokusho_md: Optional[str] = None
+    privacy_md: Optional[str] = None
 
 
 def _mask(value: str) -> str:
@@ -103,6 +104,7 @@ async def get_settings(db: Session = Depends(get_db), _=Depends(require_admin)):
         "company_md": setting.company_md or "",
         "cancel_md": setting.cancel_md or "",
         "tokusho_md": setting.tokusho_md or "",
+        "privacy_md": setting.privacy_md or "",
     }
 
 
@@ -159,6 +161,8 @@ async def update_settings(data: SettingsUpdate, db: Session = Depends(get_db), _
         setting.cancel_md = data.cancel_md
     if data.tokusho_md is not None:
         setting.tokusho_md = data.tokusho_md
+    if data.privacy_md is not None:
+        setting.privacy_md = data.privacy_md
 
     db.commit()
     return {"message": "設定を更新しました"}
