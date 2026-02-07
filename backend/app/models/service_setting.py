@@ -35,6 +35,7 @@ class ServiceSetting(Base):
     company_md = Column(Text, nullable=True, comment="運営会社情報")
     cancel_md = Column(Text, nullable=True, comment="解約ポリシー")
     tokusho_md = Column(Text, nullable=True, comment="特定商取引法に基づく表記")
+    privacy_md = Column(Text, nullable=True, comment="プライバシーポリシー")
 
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

@@ -54,11 +54,13 @@ const SettingsPage = {
                         <button class="tab-btn" onclick="SettingsPage.switchPageTab(event,'company')">運営会社</button>
                         <button class="tab-btn" onclick="SettingsPage.switchPageTab(event,'cancel')">キャンセルポリシー</button>
                         <button class="tab-btn" onclick="SettingsPage.switchPageTab(event,'tokusho')">特商法表記</button>
+                        <button class="tab-btn" onclick="SettingsPage.switchPageTab(event,'privacy')">プライバシーポリシー</button>
                     </div>
                     <div id="page-terms" class="tab-content active"><textarea id="set-terms" rows="10" style="width:100%;min-width:600px;">${s.terms_md || ''}</textarea></div>
                     <div id="page-company" class="tab-content"><textarea id="set-company" rows="10" style="width:100%;min-width:600px;">${s.company_md || ''}</textarea></div>
                     <div id="page-cancel" class="tab-content"><textarea id="set-cancel" rows="10" style="width:100%;min-width:600px;">${s.cancel_md || ''}</textarea></div>
                     <div id="page-tokusho" class="tab-content"><textarea id="set-tokusho" rows="10" style="width:100%;min-width:600px;">${s.tokusho_md || ''}</textarea></div>
+                    <div id="page-privacy" class="tab-content"><textarea id="set-privacy" rows="10" style="width:100%;min-width:600px;">${s.privacy_md || ''}</textarea></div>
                 </div>
                 <button class="btn" onclick="SettingsPage.save()">保存</button>
                 <span id="settings-msg" class="success-message" style="margin-left:10px;"></span>
@@ -106,6 +108,7 @@ const SettingsPage = {
             company_md: document.getElementById('set-company').value,
             cancel_md: document.getElementById('set-cancel').value,
             tokusho_md: document.getElementById('set-tokusho').value,
+            privacy_md: document.getElementById('set-privacy').value,
         };
 
         // APIキーは入力がある場合のみ送信
