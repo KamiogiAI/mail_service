@@ -58,7 +58,8 @@ async def subscribe(
             raise HTTPException(status_code=400, detail="このプロモーションコードは有効期限切れです")
         if promo.max_redemptions and promo.times_redeemed >= promo.max_redemptions:
             raise HTTPException(status_code=400, detail="このプロモーションコードは使用回数の上限に達しています")
-        if promo.eligible_plan_ids and plan.id not in promo.eligible_plan_ids:
+        # eligible_plan_idsはJSON型のため、int/strの混在を考慮して比較
+        if promo.eligible_plan_ids and plan.id not in [int(pid) for pid in promo.eligible_plan_ids]:
             raise HTTPException(status_code=400, detail="このプロモーションコードはこのプランには適用できません")
         stripe_promotion_code_id = promo.stripe_promotion_code_id
 

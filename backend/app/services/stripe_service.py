@@ -161,6 +161,12 @@ def retrieve_checkout_session(session_id: str):
     return stripe.checkout.Session.retrieve(session_id, expand=["subscription"])
 
 
+def retrieve_subscription(subscription_id: str) -> dict:
+    """Stripe Subscription を取得"""
+    _init_stripe()
+    return stripe.Subscription.retrieve(subscription_id)
+
+
 def construct_webhook_event(payload: bytes, sig_header: str, secret: str):
     """Webhook イベントを構築・検証"""
     return stripe.Webhook.construct_event(payload, sig_header, secret)
