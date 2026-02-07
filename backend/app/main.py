@@ -4,9 +4,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
 from app.core.csrf import CSRFMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
+from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.routers import health, auth, subscriptions, webhooks_stripe, webhooks_resend
 from app.routers import plans, pages, me
 from app.routers import admin_plans, admin_users, admin_promotions, settings as settings_router
@@ -31,6 +34,10 @@ app = FastAPI(
     docs_url="/api/docs" if settings.DEBUG else None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
 )
+
+# レート制限設定
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # --- バリデーションエラー日本語化 ---
 _FIELD_JA = {
@@ -94,6 +101,9 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 
 # ミドルウェア (登録順序: 後に登録したものが先に実行される)
+# セキュリティヘッダー（最初に実行されるよう最後に登録）
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CSRF保護
 app.add_middleware(CSRFMiddleware)
 
