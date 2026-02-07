@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ページ</title>
+    <link rel="stylesheet" href="../assets/common.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        #page-content h1, #page-content h2, #page-content h3 { margin-top: 24px; }
+        #page-content p { margin-bottom: 12px; color: #444; }
+        #page-content ul, #page-content ol { margin: 12px 0 12px 24px; color: #444; }
+        #page-content li { margin-bottom: 6px; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1><a href="index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav">
+            <a href="/login.html">ログイン</a>
+            <a href="/register.html">新規登録</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="page-card">
+            <h2 id="page-title">読み込み中...</h2>
+            <div id="page-content"></div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="pages.html?type=terms">利用規約</a>
+        <a href="pages.html?type=company">運営会社</a>
+        <a href="pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script>
+        const type = new URLSearchParams(location.search).get('type') || 'terms';
+        fetch(`/api/pages/${type}`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('page-title').textContent = data.title;
+                document.title = data.title;
+                document.getElementById('page-content').innerHTML = marked.parse(data.content_md || '内容が設定されていません。');
+            })
+            .catch(() => {
+                document.getElementById('page-content').innerHTML = '<p class="error-message">読み込みに失敗しました</p>';
+            });
+    </script>
+</body>
+</html>

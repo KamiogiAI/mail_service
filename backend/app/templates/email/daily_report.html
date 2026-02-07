@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 700px; margin: 0 auto; padding: 20px; color: #333;">
+    <!-- ヘッダー -->
+    <div style="background: #1a1a2e; color: #fff; padding: 15px 20px; margin-bottom: 20px;">
+        <h2 style="margin: 0;">{{ site_name }} - 日次レポート</h2>
+        <p style="margin: 5px 0 0 0; opacity: 0.8;">{{ report_date }}</p>
+    </div>
+
+    <!-- ステータスバナー -->
+    {% if status == 'ok' %}
+    <div style="background: #27ae60; color: #fff; padding: 12px 20px; margin-bottom: 20px; border-radius: 4px;">
+        ✓ 全体ステータス: <strong>正常</strong>
+    </div>
+    {% elif status == 'warning' %}
+    <div style="background: #f39c12; color: #fff; padding: 12px 20px; margin-bottom: 20px; border-radius: 4px;">
+        ⚠ 全体ステータス: <strong>警告</strong>（一部エラーあり）
+    </div>
+    {% elif status == 'error' %}
+    <div style="background: #e74c3c; color: #fff; padding: 12px 20px; margin-bottom: 20px; border-radius: 4px;">
+        ✗ 全体ステータス: <strong>異常</strong>（失敗あり）
+    </div>
+    {% elif status == 'none' %}
+    <div style="background: #95a5a6; color: #fff; padding: 12px 20px; margin-bottom: 20px; border-radius: 4px;">
+        − 全体ステータス: <strong>実行なし</strong>
+    </div>
+    {% endif %}
+
+    <!-- サマリーカード -->
+    <div style="background: #f8f9fa; padding: 20px; margin: 20px 0; border: 1px solid #e9ecef; border-radius: 4px;">
+        <h3 style="margin: 0 0 15px 0; font-size: 16px;">実行サマリ</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="padding: 8px 0; text-align: center; border-right: 1px solid #ddd;">
+                    <div style="font-size: 24px; font-weight: bold;">{{ total_deliveries }}</div>
+                    <div style="font-size: 12px; color: #666;">配信回数</div>
+                </td>
+                <td style="padding: 8px 0; text-align: center; border-right: 1px solid #ddd;">
+                    <div style="font-size: 24px; font-weight: bold; color: #27ae60;">{{ total_success }}</div>
+                    <div style="font-size: 12px; color: #666;">送信成功</div>
+                </td>
+                <td style="padding: 8px 0; text-align: center; border-right: 1px solid #ddd;">
+                    <div style="font-size: 24px; font-weight: bold; color: {% if total_fail > 0 %}#e74c3c{% else %}#333{% endif %};">{{ total_fail }}</div>
+                    <div style="font-size: 12px; color: #666;">送信失敗</div>
+                </td>
+                <td style="padding: 8px 0; text-align: center;">
+                    <div style="font-size: 24px; font-weight: bold;">{{ total_sent }}</div>
+                    <div style="font-size: 12px; color: #666;">合計</div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- プラン別集計 -->
+    {% if plan_stats %}
+    <div style="margin: 20px 0;">
+        <h3 style="margin-bottom: 15px; font-size: 16px;">プラン別実行結果</h3>
+        <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd;">
+            <thead>
+                <tr style="background: #1a1a2e; color: #fff;">
+                    <th style="padding: 10px; text-align: left;">プラン</th>
+                    <th style="padding: 10px; text-align: center;">結果</th>
+                    <th style="padding: 10px; text-align: right;">送信数</th>
+                    <th style="padding: 10px; text-align: right;">成功/失敗</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for plan_name, stats in plan_stats.items() %}
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 10px;">{{ plan_name }}</td>
+                    <td style="padding: 10px; text-align: center;">
+                        {% if stats.fail > 0 %}
+                        <span style="background: #e74c3c; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 12px;">失敗</span>
+                        {% else %}
+                        <span style="background: #27ae60; color: #fff; padding: 2px 8px; border-radius: 3px; font-size: 12px;">成功</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 10px; text-align: right;">{{ stats.sent }}</td>
+                    <td style="padding: 10px; text-align: right;">
+                        <span style="color: #27ae60;">{{ stats.success }}</span>
+                        /
+                        <span style="color: {% if stats.fail > 0 %}#e74c3c{% else %}#999{% endif %};">{{ stats.fail }}</span>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- エラー・警告セクション -->
+    {% if failed_count > 0 or error_count > 0 or warning_count > 0 %}
+    <div style="background: #fff3cd; padding: 15px 20px; margin: 20px 0; border: 1px solid #ffc107; border-radius: 4px;">
+        <h3 style="margin: 0 0 10px 0; font-size: 16px;">エラー・警告</h3>
+        <table style="width: 100%;">
+            {% if failed_count > 0 %}
+            <tr>
+                <td style="padding: 4px 0;">失敗・停止した配信</td>
+                <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #e74c3c;">{{ failed_count }}件</td>
+            </tr>
+            {% endif %}
+            {% if error_count > 0 %}
+            <tr>
+                <td style="padding: 4px 0;">エラーログ</td>
+                <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #e74c3c;">{{ error_count }}件</td>
+            </tr>
+            {% endif %}
+            {% if warning_count > 0 %}
+            <tr>
+                <td style="padding: 4px 0;">警告ログ</td>
+                <td style="padding: 4px 0; text-align: right; font-weight: bold; color: #f39c12;">{{ warning_count }}件</td>
+            </tr>
+            {% endif %}
+        </table>
+        <p style="font-size: 13px; color: #856404; margin: 10px 0 0 0;">詳細は管理画面のログビューアをご確認ください。</p>
+    </div>
+    {% endif %}
+
+    <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+    <p style="color: #999; font-size: 12px; text-align: center;">{{ site_name }} - 自動レポート</p>
+</body>
+</html>

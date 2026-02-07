@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理画面</title>
+    <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+    <!-- ログイン画面 -->
+    <div class="login-container" id="login-screen">
+        <div class="login-box">
+            <h1>管理画面ログイン</h1>
+            <div class="form-group">
+                <label>メールアドレス</label>
+                <input type="email" id="login-email">
+            </div>
+            <div class="form-group">
+                <label>パスワード</label>
+                <input type="password" id="login-password" onkeydown="if(event.key==='Enter')doLogin()">
+            </div>
+            <button class="btn" onclick="doLogin()" style="width:100%">ログイン</button>
+            <div id="login-error" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- メインコンテナ -->
+    <div class="main-container" id="main-screen">
+        <button class="hamburger" id="hamburger-btn" onclick="toggleSidebar()">☰</button>
+        <div class="mobile-overlay" id="mobile-overlay" onclick="toggleSidebar()"></div>
+
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2><span class="site-name">Mail Service</span></h2>
+            </div>
+            <ul class="sidebar-menu">
+                <li data-page="dashboard" onclick="location.hash='dashboard'">ダッシュボード</li>
+                <li data-page="plans" onclick="location.hash='plans'">プラン管理</li>
+                <li data-page="users" onclick="location.hash='users'">ユーザー管理</li>
+                <li data-page="subscriptions" onclick="location.hash='subscriptions'">購読管理</li>
+                <li data-page="deliveries" onclick="location.hash='deliveries'">配信履歴</li>
+                <li data-page="progress" onclick="location.hash='progress'">進捗モニタリング</li>
+                <li data-page="manual-send" onclick="location.hash='manual-send'">手動送信</li>
+                <li data-page="promotions" onclick="location.hash='promotions'">プロモーション</li>
+                <li data-page="logs" onclick="location.hash='logs'">システムログ</li>
+                <li data-page="settings" onclick="location.hash='settings'">設定</li>
+            </ul>
+            <button class="btn btn-secondary logout-btn" onclick="doLogout()">ログアウト</button>
+        </nav>
+
+        <main class="content">
+            <div id="page-content"></div>
+        </main>
+    </div>
+
+    <!-- JS -->
+    <script src="/assets/site.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/router.js"></script>
+    <script src="js/plans.js"></script>
+    <script src="js/promotions.js"></script>
+    <script src="js/settings.js"></script>
+    <script src="js/users.js"></script>
+    <script src="js/subscriptions.js"></script>
+    <script src="js/deliveries.js"></script>
+    <script src="js/progress.js"></script>
+    <script src="js/logs.js"></script>
+    <script src="js/manual_send.js"></script>
+    <script src="js/dashboard.js"></script>
+
+    <script>
+        // ログイン処理
+        async function doLogin() {
+            const errEl = document.getElementById('login-error');
+            errEl.textContent = '';
+            try {
+                const res = await API.post('/api/auth/login', {
+                    email: document.getElementById('login-email').value,
+                    password: document.getElementById('login-password').value,
+                });
+                if (res.csrf_token) API.setCsrfToken(res.csrf_token);
+                await checkAuth();
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        async function doLogout() {
+            try { await API.post('/api/auth/logout'); } catch {}
+            localStorage.removeItem('csrf_token');
+            document.getElementById('main-screen').classList.remove('active');
+            document.getElementById('login-screen').style.display = 'flex';
+        }
+
+        async function checkAuth() {
+            try {
+                const user = await API.get('/api/auth/me');
+                if (user.role !== 'admin') {
+                    alert('管理者権限が必要です');
+                    return;
+                }
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('main-screen').classList.add('active');
+                Router.start();
+            } catch {
+                document.getElementById('login-screen').style.display = 'flex';
+                document.getElementById('main-screen').classList.remove('active');
+            }
+        }
+
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+            document.getElementById('mobile-overlay').classList.toggle('active');
+        }
+
+        // ルート登録
+        Router.register('dashboard', (el) => DashboardPage.render(el));
+
+        Router.register('plans', (el) => PlansPage.render(el));
+        Router.register('promotions', (el) => PromotionsPage.render(el));
+        Router.register('settings', (el) => SettingsPage.render(el));
+
+        Router.register('users', (el) => UsersPage.render(el));
+        Router.register('subscriptions', (el) => SubscriptionsPage.render(el));
+        Router.register('deliveries', (el) => DeliveriesPage.render(el));
+        Router.register('progress', (el) => ProgressPage.render(el));
+        Router.register('manual-send', (el) => ManualSendPage.render(el));
+        Router.register('logs', (el) => LogsPage.render(el));
+
+        // 初期化
+        checkAuth();
+    </script>
+</body>
+</html>

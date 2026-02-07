@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>退会</title>
+    <link rel="stylesheet" href="../assets/common.css">
+</head>
+<body>
+    <header class="header">
+        <h1><a href="/index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav">
+            <a href="/user/mypage.html">マイページ</a>
+            <a href="#" onclick="siteLogout();return false;">ログアウト</a>
+        </nav>
+    </header>
+
+    <div class="container-narrow">
+        <div class="page-card danger-zone">
+            <h2 style="color:#c00;">退会</h2>
+            <p style="font-size:14px;color:#666;margin-bottom:20px;">
+                退会すると全購読が解約され、アカウントが完全に削除されます。<br>
+                この操作は取り消せません。
+            </p>
+            <button class="btn btn-danger btn-block" onclick="deleteAccount()">退会する</button>
+            <div id="del-err" class="error-message"></div>
+            <div style="margin-top:20px;text-align:center;">
+                <a href="mypage.html" class="nav-links" style="font-size:14px;color:#666;">マイページに戻る</a>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="/pages.html?type=terms">利用規約</a>
+        <a href="/pages.html?type=company">運営会社</a>
+        <a href="/pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+        async function deleteAccount() {
+            if (!confirm('本当に退会しますか？この操作は取り消せません。')) return;
+            if (!confirm('退会すると全購読が解約され、アカウントが完全に削除されます。よろしいですか？')) return;
+            try {
+                await API.del('/api/me/account');
+                alert('退会が完了しました');
+                localStorage.removeItem('csrf_token');
+                location.href = '/index.html';
+            } catch (e) {
+                document.getElementById('del-err').textContent = e.message;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>メール認証</title>
+    <link rel="stylesheet" href="../assets/common.css">
+</head>
+<body>
+    <header class="header">
+        <h1><a href="index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav"><a href="/login.html">ログイン</a><a href="/register.html">新規登録</a></nav>
+    </header>
+
+    <div class="container-narrow">
+        <div class="page-card">
+            <h2>メール認証</h2>
+            <p style="margin-bottom:20px;color:#666;">登録メールアドレスに送信された6桁の認証コードを入力してください。</p>
+            <div class="form-group">
+                <label>認証コード</label>
+                <input id="code" type="text" maxlength="6" pattern="[0-9]{6}" style="font-size:24px;text-align:center;letter-spacing:8px;" onkeydown="if(event.key==='Enter')verify()">
+            </div>
+            <button class="btn btn-block" onclick="verify()">認証</button>
+            <div id="error" class="error-message"></div>
+            <div style="margin-top:20px;text-align:center;">
+                <button class="btn btn-secondary" onclick="resendCode()">コード再送</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="pages.html?type=terms">利用規約</a>
+        <a href="pages.html?type=company">運営会社</a>
+        <a href="pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script>
+        const params = new URLSearchParams(location.search);
+        const userId = params.get('user_id');
+
+        async function verify() {
+            const errEl = document.getElementById('error');
+            errEl.textContent = '';
+            try {
+                const res = await fetch('/api/auth/verify-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ user_id: parseInt(userId), code: document.getElementById('code').value }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    const msg = typeof data.detail === 'string' ? data.detail
+                              : Array.isArray(data.detail) ? data.detail.map(e => e.msg || String(e)).join(', ')
+                              : 'エラーが発生しました';
+                    throw new Error(msg);
+                }
+                const csrf = res.headers.get('X-CSRF-Token');
+                if (csrf) localStorage.setItem('csrf_token', csrf);
+                location.href = '../user/mypage.html';
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        async function resendCode() {
+            try {
+                const res = await fetch(`/api/auth/resend-code?user_id=${userId}`, {
+                    method: 'POST',
+                    credentials: 'include',
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    const msg = typeof data.detail === 'string' ? data.detail
+                              : Array.isArray(data.detail) ? data.detail.map(e => e.msg || String(e)).join(', ')
+                              : 'エラーが発生しました';
+                    throw new Error(msg);
+                }
+                alert('認証コードを再送しました');
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+    </script>
+</body>
+</html>

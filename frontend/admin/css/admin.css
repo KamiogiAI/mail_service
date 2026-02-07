@@ -1,0 +1,709 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: #ffffff;
+    color: #000000;
+}
+
+/* ログイン画面 */
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.login-box {
+    background: white;
+    border: 2px solid #000;
+    padding: 40px;
+    width: 100%;
+    max-width: 400px;
+}
+
+.login-box h1 {
+    margin-bottom: 30px;
+    font-size: 24px;
+}
+
+/* フォーム */
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #000;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+.form-group small {
+    font-size: 12px;
+    color: #666;
+    display: block;
+    margin-top: 5px;
+}
+
+.form-group input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+/* ボタン */
+.btn {
+    padding: 10px 20px;
+    background: #000;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.btn:hover { background: #333; }
+.btn:disabled { background: #999; cursor: not-allowed; }
+
+.btn-secondary {
+    background: #fff;
+    color: #000;
+    border: 1px solid #000;
+}
+
+.btn-secondary:hover { background: #f0f0f0; }
+
+.btn-danger { background: #dc3545; }
+.btn-danger:hover { background: #c82333; }
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+/* メインレイアウト */
+.main-container {
+    display: none;
+}
+
+.main-container.active {
+    display: flex;
+    min-height: 100vh;
+}
+
+/* サイドバー */
+.sidebar {
+    width: 250px;
+    background: #000;
+    color: #fff;
+    padding: 20px 0;
+    position: fixed;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 100;
+    transition: transform 0.3s ease;
+}
+
+.sidebar-header {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid #333;
+}
+
+.sidebar-header h2 { font-size: 18px; }
+
+.sidebar-menu {
+    list-style: none;
+    padding: 20px 0;
+}
+
+.sidebar-menu li {
+    padding: 12px 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.sidebar-menu li:hover { background: #333; }
+.sidebar-menu li.active { background: #fff; color: #000; }
+
+.logout-btn { margin: 20px; }
+
+/* ハンバーガーメニュー */
+.hamburger {
+    display: none;
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 200;
+    background: #000;
+    color: #fff;
+    border: none;
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 24px;
+}
+
+.mobile-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 90;
+}
+
+.mobile-overlay.active { display: block; }
+
+/* コンテンツ */
+.content {
+    margin-left: 250px;
+    padding: 30px;
+    flex: 1;
+}
+
+.content-header {
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #000;
+}
+
+.content-header h1 { font-size: 28px; }
+
+/* カード */
+.card {
+    background: #fff;
+    border: 1px solid #000;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+.card-header h2 { font-size: 20px; }
+
+/* テーブル */
+.table-container { overflow-x: auto; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+table th, table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+table th {
+    background: #000;
+    color: #fff;
+    font-weight: 600;
+}
+
+table tr:hover { background: #f5f5f5; }
+
+/* フィルター */
+.filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 8px 16px;
+    border: 1px solid #000;
+    background: #fff;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.filter-btn.active {
+    background: #000;
+    color: #fff;
+}
+
+/* モーダル */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.modal.active { display: flex; }
+
+.modal-content {
+    background: #fff;
+    border: 2px solid #000;
+    padding: 30px;
+    width: 100%;
+    max-width: 700px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #000;
+}
+
+.modal-header h2 { font-size: 22px; }
+
+.close-btn {
+    cursor: pointer;
+    font-size: 24px;
+    font-weight: bold;
+    border: none;
+    background: none;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+/* バッジ */
+.badge {
+    display: inline-block;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #000;
+}
+
+.badge-active { background: #d4edda; border-color: #28a745; }
+.badge-inactive { background: #e2e3e5; border-color: #6c757d; }
+.badge-waiting { background: #e8f4fd; border-color: #6cb4e4; color: #1a6fa0; }
+.badge-warning { background: #fff3cd; border-color: #ffc107; }
+.badge-danger { background: #f8d7da; border-color: #dc3545; }
+
+/* 配信曜日チェックボックス */
+.weekday-checks {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.weekday-checks label {
+    display: inline-flex;
+    align-items: center;
+    font-weight: normal;
+    margin-bottom: 0;
+    cursor: pointer;
+}
+
+/* 質問ビルダー */
+.question-item {
+    border: 1px solid #ddd;
+    padding: 15px;
+    margin-bottom: 10px;
+    position: relative;
+}
+
+.question-item .remove-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+}
+
+.question-item .form-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.question-item .form-row > * { flex: 1; }
+
+/* 選択肢リスト (質問ビルダー) */
+.options-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.option-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.option-row input {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #000;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+/* アクションボタン群 */
+.action-btns {
+    display: flex;
+    gap: 5px;
+}
+
+/* メッセージ */
+.error-message { color: #dc3545; font-size: 14px; margin-top: 10px; }
+.success-message { color: #28a745; font-size: 14px; margin-top: 10px; }
+.loading { opacity: 0.6; pointer-events: none; }
+
+/* ページネーション */
+.pagination {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.page-btn {
+    padding: 8px 12px;
+    border: 1px solid #000;
+    background: #fff;
+    cursor: pointer;
+}
+
+.page-btn.active {
+    background: #000;
+    color: #fff;
+}
+
+/* タブ */
+.tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #000;
+    overflow-x: auto;
+}
+
+.tab-btn {
+    padding: 10px 20px;
+    border: 1px solid #000;
+    border-bottom: none;
+    background: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    margin-bottom: -2px;
+}
+
+.tab-btn.active {
+    background: #000;
+    color: #fff;
+}
+
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* 購読管理サマリー */
+.subs-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 15px;
+}
+
+.subs-summary-item {
+    text-align: center;
+    padding: 10px;
+    border: 1px solid #eee;
+}
+
+.subs-summary-value {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.subs-summary-label {
+    font-size: 12px;
+    color: #666;
+}
+
+/* プラン変更チェックボックス */
+.plan-check-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #eee;
+    margin-bottom: 6px;
+    cursor: pointer;
+    font-weight: normal;
+}
+
+.plan-check-row:hover {
+    background: #f5f5f5;
+}
+
+.plan-check-row input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+/* ユーティリティ */
+.hidden { display: none; }
+.text-right { text-align: right; }
+.mt-10 { margin-top: 10px; }
+.mt-20 { margin-top: 20px; }
+.mb-10 { margin-bottom: 10px; }
+.mb-20 { margin-bottom: 20px; }
+.flex { display: flex; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.gap-10 { gap: 10px; }
+
+/* ダッシュボード */
+.dash-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 15px;
+}
+
+.dash-stat-card {
+    border: 1px solid #000;
+    padding: 20px 15px;
+    text-align: center;
+}
+
+.dash-stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.dash-stat-label {
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 2px;
+}
+
+.dash-stat-sub {
+    font-size: 11px;
+    color: #999;
+}
+
+.dash-stat-success { border-color: #28a745; }
+.dash-stat-success .dash-stat-value { color: #28a745; }
+
+.dash-stat-danger { border-color: #dc3545; }
+.dash-stat-danger .dash-stat-value { color: #dc3545; }
+
+.dash-plan-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.dash-plan-name {
+    width: 180px;
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.dash-plan-price {
+    font-weight: normal;
+    font-size: 12px;
+    color: #666;
+    margin-left: 6px;
+}
+
+.dash-plan-bar-wrap {
+    flex: 1;
+    height: 20px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+}
+
+.dash-plan-bar {
+    height: 100%;
+    background: #000;
+    transition: width 0.3s;
+}
+
+.dash-plan-count {
+    width: 60px;
+    text-align: right;
+    font-weight: 600;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.dash-delivery-bar {
+    height: 24px;
+    background: #f8d7da;
+    border: 1px solid #ddd;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.dash-delivery-bar-success {
+    height: 100%;
+    background: #28a745;
+    transition: width 0.3s;
+}
+
+/* 進捗ダッシュボード */
+.progress-dashboard {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 15px;
+}
+
+.progress-stat-card {
+    border: 1px solid #ddd;
+    padding: 20px 15px;
+    text-align: center;
+}
+
+.progress-stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.progress-stat-label {
+    font-size: 13px;
+    color: #666;
+}
+
+.progress-stat-running {
+    border-color: #ffc107;
+    animation: pulse 2s infinite;
+}
+
+.progress-stat-running .progress-stat-value { color: #e6a800; }
+
+.progress-stat-success { border-color: #28a745; }
+.progress-stat-success .progress-stat-value { color: #28a745; }
+
+.progress-stat-error { border-color: #dc3545; }
+.progress-stat-error .progress-stat-value { color: #dc3545; }
+
+/* プログレスバー */
+.progress-bar-wrap {
+    flex: 1;
+    height: 18px;
+    background: #f0f0f0;
+    border: 1px solid #ddd;
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: #28a745;
+    transition: width 0.3s;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.progress-bar-error {
+    height: 100%;
+    background: #dc3545;
+    transition: width 0.3s;
+    position: absolute;
+    top: 0;
+}
+
+/* パルスアニメーション */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.badge-pulse {
+    animation: pulse 2s infinite;
+}
+
+/* レスポンシブ */
+@media (max-width: 768px) {
+    .hamburger { display: block; }
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.active { transform: translateX(0); }
+    .content { margin-left: 0; padding: 70px 16px 24px; }
+    .content-header { margin-bottom: 20px; padding-bottom: 12px; }
+    .content-header h1 { font-size: 22px; }
+    .filters { flex-direction: column; }
+    .question-item .form-row { flex-direction: column; }
+    table { font-size: 12px; }
+    table th, table td { padding: 8px 6px; }
+    .modal-content { padding: 20px 16px; max-height: 95vh; }
+    .modal-header h2 { font-size: 18px; }
+    .subs-summary { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .subs-summary-value { font-size: 18px; }
+    .subs-summary-label { font-size: 11px; }
+    .tabs { flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+    .tab-btn { white-space: nowrap; flex-shrink: 0; padding: 8px 14px; font-size: 13px; }
+    .dash-stats { grid-template-columns: repeat(2, 1fr); }
+    .progress-dashboard { grid-template-columns: repeat(2, 1fr); }
+    .dash-plan-name { width: 120px; font-size: 12px; }
+    .dash-plan-row { gap: 8px; }
+    .card { padding: 16px; }
+    .card-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .btn { padding: 8px 14px; font-size: 13px; }
+    .action-btns { flex-wrap: wrap; }
+}
+
+@media (max-width: 480px) {
+    .hamburger { top: 14px; left: 14px; padding: 8px 12px; font-size: 20px; }
+    .content { padding: 60px 12px 20px; }
+    .content-header h1 { font-size: 18px; }
+    .subs-summary { grid-template-columns: repeat(2, 1fr); }
+    .dash-stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .dash-stat-card { padding: 14px 10px; }
+    .dash-stat-value { font-size: 22px; }
+    .dash-stat-label { font-size: 11px; }
+    .progress-dashboard { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .progress-stat-card { padding: 14px 10px; }
+    .progress-stat-value { font-size: 22px; }
+    .dash-plan-row { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .dash-plan-name { width: auto; }
+    .dash-plan-bar-wrap { width: 100%; }
+    .dash-plan-count { width: auto; text-align: left; }
+    .modal-content { padding: 16px 12px; }
+    .modal-footer { flex-direction: column; }
+    .modal-footer .btn { width: 100%; }
+    table th, table td { padding: 6px 4px; font-size: 11px; }
+    .login-box { padding: 30px 20px; }
+    .login-box h1 { font-size: 20px; }
+}

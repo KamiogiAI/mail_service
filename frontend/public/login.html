@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ログイン</title>
+    <link rel="stylesheet" href="../assets/common.css">
+</head>
+<body>
+    <header class="header">
+        <h1><a href="index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav"><a href="/login.html">ログイン</a><a href="/register.html">新規登録</a></nav>
+    </header>
+
+    <div class="container-narrow">
+        <div class="page-card">
+            <h2>ログイン</h2>
+            <div class="form-group"><label>メールアドレス</label><input id="email" type="email"></div>
+            <div class="form-group"><label>パスワード</label><input id="password" type="password" onkeydown="if(event.key==='Enter')login()"></div>
+            <button class="btn btn-block" onclick="login()">ログイン</button>
+            <div id="error" class="error-message"></div>
+            <div class="nav-links" style="margin-top:20px;text-align:center;">
+                <a href="register.html">新規登録</a>
+                <a href="password-reset.html">パスワードを忘れた方</a>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="pages.html?type=terms">利用規約</a>
+        <a href="pages.html?type=company">運営会社</a>
+        <a href="pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script>
+        async function login() {
+            const errEl = document.getElementById('error');
+            errEl.textContent = '';
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        email: document.getElementById('email').value,
+                        password: document.getElementById('password').value,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    // メール認証が必要な場合
+                    if (data.needs_verification && data.user_id) {
+                        location.href = `verify.html?user_id=${data.user_id}`;
+                        return;
+                    }
+                    const msg = typeof data.detail === 'string' ? data.detail
+                              : Array.isArray(data.detail) ? data.detail.map(e => e.msg || String(e)).join(', ')
+                              : 'エラーが発生しました';
+                    throw new Error(msg);
+                }
+                const csrf = res.headers.get('X-CSRF-Token');
+                if (csrf) localStorage.setItem('csrf_token', csrf);
+                location.href = '../user/mypage.html';
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+    </script>
+</body>
+</html>

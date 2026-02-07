@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>会員登録</title>
+    <link rel="stylesheet" href="../assets/common.css">
+</head>
+<body>
+    <header class="header">
+        <h1><a href="index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav"><a href="/login.html">ログイン</a><a href="/register.html">新規登録</a></nav>
+    </header>
+
+    <div class="container-narrow">
+        <div class="page-card">
+            <h2>会員登録</h2>
+            <div class="form-group"><label>姓</label><input id="name-last" type="text"></div>
+            <div class="form-group"><label>名</label><input id="name-first" type="text"></div>
+            <div class="form-group"><label>メールアドレス</label><input id="email" type="email"></div>
+            <div class="form-group"><label>パスワード</label><input id="password" type="password"><small>8文字以上</small></div>
+            <div class="form-group" style="margin-top:16px;">
+                <label class="choice-label" style="font-size:14px;line-height:1.6;">
+                    <input type="checkbox" id="agree-terms">
+                    <a href="/pages.html?type=terms" target="_blank">利用規約</a>および<a href="/pages.html?type=privacy" target="_blank">プライバシーポリシー</a>に同意する
+                </label>
+            </div>
+            <button class="btn btn-block" onclick="register()">登録</button>
+            <div id="error" class="error-message"></div>
+            <div class="nav-links" style="margin-top:20px;text-align:center;">
+                <a href="login.html">既にアカウントをお持ちの方</a>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="pages.html?type=terms">利用規約</a>
+        <a href="pages.html?type=company">運営会社</a>
+        <a href="pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script>
+        async function register() {
+            const errEl = document.getElementById('error');
+            errEl.textContent = '';
+            if (!document.getElementById('agree-terms').checked) {
+                errEl.textContent = '利用規約およびプライバシーポリシーへの同意が必要です';
+                return;
+            }
+            try {
+                const res = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        email: document.getElementById('email').value,
+                        password: document.getElementById('password').value,
+                        name_last: document.getElementById('name-last').value,
+                        name_first: document.getElementById('name-first').value,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    const msg = typeof data.detail === 'string' ? data.detail
+                              : Array.isArray(data.detail) ? data.detail.map(e => e.msg || String(e)).join(', ')
+                              : 'エラーが発生しました';
+                    throw new Error(msg);
+                }
+                location.href = `verify.html?user_id=${data.user_id}`;
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+    </script>
+</body>
+</html>

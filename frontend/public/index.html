@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プラン一覧</title>
+    <link rel="stylesheet" href="../assets/common.css">
+</head>
+<body class="footer-fixed">
+    <header class="header">
+        <h1><a href="index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav">
+            <a href="/login.html">ログイン</a>
+            <a href="/register.html">新規登録</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <h2>プラン一覧</h2>
+        <div id="plans" class="plan-grid">読み込み中...</div>
+    </div>
+
+    <footer>
+        <a href="pages.html?type=terms">利用規約</a>
+        <a href="pages.html?type=company">運営会社</a>
+        <a href="pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script>
+        async function loadPlans() {
+            try {
+                const res = await fetch('/api/plans', { credentials: 'include' });
+                const plans = await res.json();
+                const el = document.getElementById('plans');
+                if (plans.length === 0) {
+                    el.innerHTML = '<div class="empty-state"><p>現在利用可能なプランはありません</p></div>';
+                    return;
+                }
+                el.innerHTML = plans.map(p => `
+                    <div class="card">
+                        <h3>${esc(p.name)}</h3>
+                        <p style="color:#666;margin-bottom:12px;">${esc(p.description || '')}</p>
+                        <div class="price">¥${p.price.toLocaleString()}<span style="font-size:14px;font-weight:normal;color:#888;">/月</span></div>
+                        <a href="../user/subscribe.html?plan_id=${p.id}" class="btn btn-block" style="margin-top:16px;">詳細を見る</a>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('plans').innerHTML = '<p class="error-message">読み込みに失敗しました</p>';
+            }
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        loadPlans();
+    </script>
+</body>
+</html>

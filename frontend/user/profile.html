@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プロフィール編集</title>
+    <link rel="stylesheet" href="../assets/common.css">
+</head>
+<body>
+    <header class="header">
+        <h1><a href="/index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav">
+            <a href="/user/mypage.html">マイページ</a>
+            <a href="#" onclick="siteLogout();return false;">ログアウト</a>
+        </nav>
+    </header>
+
+    <div class="container-narrow">
+        <div class="page-card">
+            <h2>プロフィール編集</h2>
+            <div id="profile-form">読み込み中...</div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="/pages.html?type=terms">利用規約</a>
+        <a href="/pages.html?type=company">運営会社</a>
+        <a href="/pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        async function loadProfile() {
+            const el = document.getElementById('profile-form');
+            try {
+                const p = await API.get('/api/me/profile');
+                el.innerHTML = `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                        <div class="form-group"><label>姓</label><input id="prof-last" type="text" value="${esc(p.name_last)}"></div>
+                        <div class="form-group"><label>名</label><input id="prof-first" type="text" value="${esc(p.name_first)}"></div>
+                    </div>
+                    <div class="form-group"><label>メールアドレス</label><input id="prof-email" type="email" value="${esc(p.email)}"></div>
+                    <div style="margin-bottom:16px;font-size:12px;color:#bbb;">会員番号: ${esc(p.member_no)}</div>
+                    <button class="btn btn-block" onclick="updateProfile()">更新する</button>
+                    <div id="prof-msg" class="success-message"></div>
+                    <div id="prof-err" class="error-message"></div>
+                `;
+            } catch (e) {
+                el.innerHTML = `<p class="error-message">${esc(e.message)}</p>`;
+            }
+        }
+
+        async function updateProfile() {
+            const msgEl = document.getElementById('prof-msg');
+            const errEl = document.getElementById('prof-err');
+            msgEl.textContent = '';
+            errEl.textContent = '';
+            try {
+                await API.put('/api/me/profile', {
+                    name_last: document.getElementById('prof-last').value,
+                    name_first: document.getElementById('prof-first').value,
+                    email: document.getElementById('prof-email').value,
+                });
+                msgEl.textContent = '更新しました';
+                setTimeout(() => msgEl.textContent = '', 3000);
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        loadProfile();
+    </script>
+</body>
+</html>

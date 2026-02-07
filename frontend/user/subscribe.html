@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プラン詳細</title>
+    <link rel="stylesheet" href="../assets/common.css">
+</head>
+<body>
+    <header class="header">
+        <h1><a href="/index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav"><a href="/user/mypage.html">マイページ</a><a href="#" onclick="siteLogout();return false;">ログアウト</a></nav>
+    </header>
+
+    <div class="container">
+        <div id="plan-detail">読み込み中...</div>
+    </div>
+
+    <footer>
+        <a href="/pages.html?type=terms">利用規約</a>
+        <a href="/pages.html?type=company">運営会社</a>
+        <a href="/pages.html?type=tokusho">特定商取引法</a>
+    </footer>
+
+    <script src="/assets/site.js"></script>
+    <script src="js/api.js"></script>
+    <script>
+        const planId = new URLSearchParams(location.search).get('plan_id');
+
+        async function loadPlan() {
+            try {
+                const plan = await API.get(`/api/plans/${planId}`);
+                const el = document.getElementById('plan-detail');
+
+                let questionsHtml = '';
+                if (plan.questions && plan.questions.length > 0) {
+                    questionsHtml = `
+                        <div class="card" style="margin-top:16px;">
+                            <h3>質問項目</h3>
+                            <p style="margin-bottom:15px;color:#666;font-size:14px;">プランのカスタマイズに必要な情報をご入力ください。</p>
+                            ${plan.questions.map(q => renderQuestion(q)).join('')}
+                        </div>
+                    `;
+                }
+
+                el.innerHTML = `
+                    <div class="card">
+                        <h2>${esc(plan.name)}</h2>
+                        <p style="color:#666;">${esc(plan.description || '')}</p>
+                        <div class="price">¥${plan.price.toLocaleString()}<span style="font-size:14px;font-weight:normal;color:#888;">/月</span></div>
+                    </div>
+                    ${questionsHtml}
+                    <button class="btn btn-block" onclick="subscribe()" style="margin-top:16px;">このプランに申し込む</button>
+                    <div id="sub-error" class="error-message"></div>
+                `;
+            } catch (e) {
+                document.getElementById('plan-detail').innerHTML = `<p class="error-message">${e.message}</p>`;
+            }
+        }
+
+        function renderQuestion(q) {
+            let input = '';
+            switch (q.question_type) {
+                case 'textarea':
+                    input = `<textarea id="q-${q.id}" class="q-input" data-qid="${q.id}"></textarea>`;
+                    break;
+                case 'number':
+                    input = `<input id="q-${q.id}" class="q-input" data-qid="${q.id}" type="number">`;
+                    break;
+                case 'date':
+                    input = `<input id="q-${q.id}" class="q-input" data-qid="${q.id}" type="date">`;
+                    break;
+                case 'select':
+                    input = `<select id="q-${q.id}" class="q-input" data-qid="${q.id}">
+                        <option value="">選択してください</option>
+                        ${(q.options || []).map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}
+                    </select>`;
+                    break;
+                case 'radio':
+                    input = (q.options || []).map(o => `
+                        <label class="choice-label">
+                            <input type="radio" name="q-${q.id}" class="q-radio" data-qid="${q.id}" value="${esc(o)}"> ${esc(o)}
+                        </label>
+                    `).join('');
+                    break;
+                case 'checkbox':
+                    input = (q.options || []).map(o => `
+                        <label class="choice-label">
+                            <input type="checkbox" class="q-check" data-qid="${q.id}" value="${esc(o)}"> ${esc(o)}
+                        </label>
+                    `).join('');
+                    break;
+                case 'array': {
+                    const minReq = q.array_min || 0;
+                    const maxItems = q.array_max || 0;
+                    const hints = [];
+                    if (minReq >= 1) hints.push(minReq + '件以上必須');
+                    if (maxItems > 0) hints.push('最大' + maxItems + '件');
+                    const hintHtml = hints.length ? '<small style="color:#888;display:block;margin-top:4px;">' + hints.join(' / ') + '</small>' : '';
+                    input = `
+                        <div class="q-array" data-qid="${q.id}" data-max="${maxItems}" data-min="${minReq}">
+                            <div class="q-array-items">
+                                <div class="q-array-item" style="display:flex;gap:8px;margin-bottom:6px;">
+                                    <input type="text" class="q-array-input" style="flex:1;">
+                                </div>
+                            </div>
+                            <button type="button" onclick="addArrayItem(this.closest('.q-array'))" style="background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:4px 14px;cursor:pointer;font-size:13px;">+ 追加</button>
+                            ${hintHtml}
+                        </div>
+                    `;
+                    break;
+                }
+                default:
+                    input = `<input id="q-${q.id}" class="q-input" data-qid="${q.id}" type="text">`;
+            }
+            return `<div class="form-group"><label>${esc(q.label)}${q.is_required ? ' *' : ''}</label>${input}</div>`;
+        }
+
+        function addArrayItem(container) {
+            const max = parseInt(container.dataset.max) || 0;
+            const items = container.querySelectorAll('.q-array-item');
+            if (max > 0 && items.length >= max) {
+                alert('最大' + max + '件までです');
+                return;
+            }
+            if (items.length === 1 && !items[0].querySelector('button')) {
+                items[0].insertAdjacentHTML('beforeend', '<button type="button" onclick="removeArrayItem(this)" style="background:#f44;color:#fff;border:none;border-radius:4px;padding:0 10px;cursor:pointer;font-size:16px;">×</button>');
+            }
+            const div = document.createElement('div');
+            div.className = 'q-array-item';
+            div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;';
+            div.innerHTML = '<input type="text" class="q-array-input" style="flex:1;"><button type="button" onclick="removeArrayItem(this)" style="background:#f44;color:#fff;border:none;border-radius:4px;padding:0 10px;cursor:pointer;font-size:16px;">×</button>';
+            container.querySelector('.q-array-items').appendChild(div);
+        }
+
+        function removeArrayItem(btn) {
+            const container = btn.closest('.q-array');
+            const items = container.querySelectorAll('.q-array-item');
+            if (items.length <= 1) return;
+            btn.closest('.q-array-item').remove();
+            const remaining = container.querySelectorAll('.q-array-item');
+            if (remaining.length === 1) {
+                const rmBtn = remaining[0].querySelector('button');
+                if (rmBtn) rmBtn.remove();
+            }
+        }
+
+        async function prefillAnswers() {
+            try {
+                const res = await fetch(`/api/me/answers/${planId}`, { credentials: 'include' });
+                if (!res.ok) return;
+                const answers = await res.json();
+                for (const a of answers) {
+                    if (!a.answer) continue;
+                    const qid = a.question_id;
+
+                    switch (a.question_type) {
+                        case 'radio':
+                            document.querySelectorAll(`.q-radio[data-qid="${qid}"]`).forEach(el => {
+                                if (el.value === a.answer) el.checked = true;
+                            });
+                            break;
+                        case 'checkbox': {
+                            let vals = [];
+                            try { vals = JSON.parse(a.answer); } catch {}
+                            document.querySelectorAll(`.q-check[data-qid="${qid}"]`).forEach(el => {
+                                if (vals.includes(el.value)) el.checked = true;
+                            });
+                            break;
+                        }
+                        case 'array': {
+                            let vals = [];
+                            try { vals = JSON.parse(a.answer); } catch {}
+                            const container = document.querySelector(`.q-array[data-qid="${qid}"]`);
+                            if (container && vals.length > 0) {
+                                const itemsDiv = container.querySelector('.q-array-items');
+                                itemsDiv.innerHTML = '';
+                                const showRemove = vals.length > 1;
+                                vals.forEach(v => {
+                                    const div = document.createElement('div');
+                                    div.className = 'q-array-item';
+                                    div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;';
+                                    const removeBtn = showRemove ? '<button type="button" onclick="removeArrayItem(this)" style="background:#f44;color:#fff;border:none;border-radius:4px;padding:0 10px;cursor:pointer;font-size:16px;">×</button>' : '';
+                                    div.innerHTML = `<input type="text" class="q-array-input" style="flex:1;" value="${esc(v)}">${removeBtn}`;
+                                    itemsDiv.appendChild(div);
+                                });
+                            }
+                            break;
+                        }
+                        default: {
+                            const el = document.getElementById(`q-${qid}`);
+                            if (el) el.value = a.answer;
+                        }
+                    }
+
+                    if (a.carried_over) {
+                        const el = document.getElementById(`q-${qid}`) ||
+                                   document.querySelector(`.q-radio[data-qid="${qid}"]`) ||
+                                   document.querySelector(`.q-check[data-qid="${qid}"]`);
+                        if (el) {
+                            const hint = document.createElement('small');
+                            hint.style.cssText = 'color:#666;display:block;margin-top:4px;font-style:italic;';
+                            hint.textContent = '他のプランから引き継ぎました';
+                            el.closest('.form-group').appendChild(hint);
+                        }
+                    }
+                }
+            } catch {
+                // プリフィル失敗は無視
+            }
+        }
+
+        async function subscribe() {
+            const errEl = document.getElementById('sub-error');
+            errEl.textContent = '';
+
+            const answers = [];
+            document.querySelectorAll('.q-input').forEach(el => {
+                answers.push({ question_id: parseInt(el.dataset.qid), answer: el.value });
+            });
+            document.querySelectorAll('.q-radio:checked').forEach(el => {
+                answers.push({ question_id: parseInt(el.dataset.qid), answer: el.value });
+            });
+            const checkMap = {};
+            document.querySelectorAll('.q-check:checked').forEach(el => {
+                const qid = el.dataset.qid;
+                if (!checkMap[qid]) checkMap[qid] = [];
+                checkMap[qid].push(el.value);
+            });
+            Object.entries(checkMap).forEach(([qid, vals]) => {
+                answers.push({ question_id: parseInt(qid), answer: JSON.stringify(vals) });
+            });
+            document.querySelectorAll('.q-array').forEach(container => {
+                const qid = container.dataset.qid;
+                const vals = [];
+                container.querySelectorAll('.q-array-input').forEach(input => {
+                    if (input.value.trim()) vals.push(input.value.trim());
+                });
+                answers.push({ question_id: parseInt(qid), answer: JSON.stringify(vals) });
+            });
+
+            try {
+                if (answers.length > 0) {
+                    await API.post(`/api/me/answers/${planId}`, answers);
+                }
+                const res = await API.post('/api/subscribe', { plan_id: parseInt(planId) });
+                if (res.checkout_url) {
+                    location.href = res.checkout_url;
+                } else {
+                    location.href = 'mypage.html?subscription=success';
+                }
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = s || '';
+            return d.innerHTML;
+        }
+
+        loadPlan().then(() => prefillAnswers());
+    </script>
+</body>
+</html>
