@@ -1,10 +1,12 @@
 """マイページAPI"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.redis import get_redis
+from app.core.rate_limit import limiter, VERIFY_CODE_RATE_LIMIT
 from app.models.user import User
 from app.models.subscription import Subscription
 from app.models.plan import Plan
@@ -14,6 +16,12 @@ from app.models.user_answer import UserAnswer
 from app.models.user_answer_history import UserAnswerHistory
 from app.models.plan_question import PlanQuestion
 from app.services import auth_service, stripe_service
+from app.services.mail_service import send_password_change_code_email
+from app.schemas.auth import (
+    PasswordChangeRequestSchema,
+    PasswordChangeConfirmSchema,
+    PasswordChangeResponse,
+)
 from app.routers.deps import require_login
 
 router = APIRouter(prefix="/api/me", tags=["me"])
@@ -68,12 +76,80 @@ async def change_password(
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    """パスワード変更"""
+    """パスワード変更（旧API - 後方互換性のため維持）"""
     if not auth_service.verify_password(data.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="現在のパスワードが正しくありません")
     user.password_hash = auth_service.hash_password(data.new_password)
     db.commit()
     return {"message": "パスワードを変更しました"}
+
+
+@router.post("/password-change/request", response_model=PasswordChangeResponse)
+@limiter.limit(VERIFY_CODE_RATE_LIMIT)
+async def request_password_change(
+    request: Request,
+    data: PasswordChangeRequestSchema,
+    user: User = Depends(require_login),
+    r=Depends(get_redis),
+):
+    """パスワード変更リクエスト（2FA: 認証コード送信）"""
+    # 現在のパスワードを検証
+    if not auth_service.verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="現在のパスワードが正しくありません")
+
+    # 認証コード生成
+    code = await auth_service.generate_verify_code(r, user.id)
+    if code is None:
+        raise HTTPException(status_code=429, detail="認証がロックされています。しばらくお待ちください。")
+
+    # 認証コードをメール送信
+    send_password_change_code_email(
+        to_email=user.email,
+        name=f"{user.name_last} {user.name_first}",
+        code=code,
+    )
+
+    # 一時トークン生成
+    token = await auth_service.create_password_change_token(r, user.id)
+
+    return PasswordChangeResponse(
+        message="認証コードをメールに送信しました",
+        token=token,
+    )
+
+
+@router.post("/password-change/confirm", response_model=PasswordChangeResponse)
+@limiter.limit(VERIFY_CODE_RATE_LIMIT)
+async def confirm_password_change(
+    request: Request,
+    data: PasswordChangeConfirmSchema,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+    r=Depends(get_redis),
+):
+    """パスワード変更確認（2FA: 認証コード検証 + パスワード更新）"""
+    # 一時トークン検証（消費しない - コード検証が先）
+    token_user_id = await auth_service.validate_password_change_token(r, data.token)
+    if token_user_id is None:
+        raise HTTPException(status_code=400, detail="トークンが無効または期限切れです")
+
+    # トークンのユーザーIDとログインユーザーが一致するか確認
+    if token_user_id != user.id:
+        raise HTTPException(status_code=400, detail="トークンが無効です")
+
+    # 認証コード検証
+    success, msg = await auth_service.verify_code(r, user.id, data.code)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    # トークン消費（コード検証成功後）
+    await auth_service.consume_password_change_token(r, data.token)
+
+    # パスワード更新
+    user.password_hash = auth_service.hash_password(data.new_password)
+    db.commit()
+
+    return PasswordChangeResponse(message="パスワードを変更しました")
 
 
 @router.get("/delivery-history")

@@ -27,6 +27,10 @@ VERIFY_LOCK_PREFIX = "verify_lock:"
 RESET_TOKEN_PREFIX = "reset_token:"
 RESET_TOKEN_TTL = 3600  # 1時間
 
+# パスワード変更2FA設定
+PASSWORD_CHANGE_TOKEN_PREFIX = "pw_change_token:"
+PASSWORD_CHANGE_TOKEN_TTL = 600  # 10分
+
 
 def hash_password(password: str) -> str:
     """パスワードをbcryptでハッシュ化"""
@@ -141,6 +145,33 @@ async def create_reset_token(r: aioredis.Redis, user_id: int) -> str:
 async def validate_reset_token(r: aioredis.Redis, token: str) -> Optional[int]:
     """リセットトークンを検証してuser_idを返す"""
     key = f"{RESET_TOKEN_PREFIX}{token}"
+    user_id = await r.get(key)
+    if user_id is None:
+        return None
+    await r.delete(key)
+    return int(user_id)
+
+
+async def create_password_change_token(r: aioredis.Redis, user_id: int) -> str:
+    """パスワード変更用一時トークンを生成（認証コードとは別にセッション用）"""
+    token = secrets.token_urlsafe(32)
+    key = f"{PASSWORD_CHANGE_TOKEN_PREFIX}{token}"
+    await r.set(key, str(user_id), ex=PASSWORD_CHANGE_TOKEN_TTL)
+    return token
+
+
+async def validate_password_change_token(r: aioredis.Redis, token: str) -> Optional[int]:
+    """パスワード変更トークンを検証してuser_idを返す（トークンは削除しない）"""
+    key = f"{PASSWORD_CHANGE_TOKEN_PREFIX}{token}"
+    user_id = await r.get(key)
+    if user_id is None:
+        return None
+    return int(user_id)
+
+
+async def consume_password_change_token(r: aioredis.Redis, token: str) -> Optional[int]:
+    """パスワード変更トークンを検証・消費してuser_idを返す"""
+    key = f"{PASSWORD_CHANGE_TOKEN_PREFIX}{token}"
     user_id = await r.get(key)
     if user_id is None:
         return None

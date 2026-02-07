@@ -41,6 +41,26 @@ def send_verify_code_email(to_email: str, name: str, code: str) -> bool:
         return False
 
 
+def send_password_change_code_email(to_email: str, name: str, code: str) -> bool:
+    """パスワード変更用認証コード送信"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        template = jinja_env.get_template("password_change_code.html")
+        html = template.render(name=name, code=code, site_name=get_site_name())
+
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": f"【{get_site_name()}】パスワード変更認証コード",
+            "html": html,
+        })
+        logger.info(f"パスワード変更認証コードメール送信: {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"パスワード変更認証コードメール送信失敗: {to_email} - {e}")
+        return False
+
+
 def send_password_reset_email(to_email: str, name: str, reset_url: str) -> bool:
     """パスワードリセットメール送信"""
     try:

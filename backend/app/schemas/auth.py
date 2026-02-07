@@ -76,6 +76,29 @@ class ChangePasswordRequest(BaseModel):
         return validate_password_strength(v)
 
 
+class PasswordChangeRequestSchema(BaseModel):
+    """パスワード変更リクエスト（2FA開始）"""
+    current_password: str
+
+
+class PasswordChangeConfirmSchema(BaseModel):
+    """パスワード変更確認（2FA完了）"""
+    token: str
+    code: str = Field(min_length=6, max_length=6)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_password_strength(cls, v: str) -> str:
+        return validate_password_strength(v)
+
+
+class PasswordChangeResponse(BaseModel):
+    """パスワード変更レスポンス"""
+    message: str
+    token: Optional[str] = None
+
+
 class AuthResponse(BaseModel):
     message: str
     user_id: Optional[int] = None
