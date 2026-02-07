@@ -17,6 +17,18 @@ from app.routers.deps import require_admin
 router = APIRouter(prefix="/api/admin/progress", tags=["admin-progress"])
 
 STATUS_LABELS = {0: "未実行", 1: "実行中", 2: "完了", 3: "エラー"}
+JST = ZoneInfo("Asia/Tokyo")
+UTC = ZoneInfo("UTC")
+
+
+def _to_jst_iso(dt: datetime) -> str:
+    """DateTimeをJSTに変換してISO形式で返す"""
+    if dt is None:
+        return None
+    # タイムゾーンなしの場合はUTCとして扱う
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(JST).isoformat()
 
 
 def _today_jst():
@@ -198,7 +210,7 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
         recent_errors.append({
             "plan_name": plan_name or "(削除済)",
             "error_message": error_message,
-            "created_at": pp.updated_at.isoformat() if pp.updated_at else None,
+            "created_at": _to_jst_iso(pp.updated_at),
         })
 
     return {
@@ -255,8 +267,8 @@ async def list_progress(
                 fail_count = delivery.fail_count
                 delivery_subject = delivery.subject
                 delivery_status = delivery.status
-                delivery_started_at = delivery.started_at.isoformat() if delivery.started_at else None
-                delivery_completed_at = delivery.completed_at.isoformat() if delivery.completed_at else None
+                delivery_started_at = _to_jst_iso(delivery.started_at)
+                delivery_completed_at = _to_jst_iso(delivery.completed_at)
                 if delivery.started_at and delivery.completed_at:
                     duration_seconds = int((delivery.completed_at - delivery.started_at).total_seconds())
 
@@ -283,7 +295,7 @@ async def list_progress(
             "duration_seconds": duration_seconds,
             "schedule_type": schedule_type_label.get(plan.schedule_type, plan.schedule_type or "-") if plan else "-",
             "schedule_time": schedule_time,
-            "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            "updated_at": _to_jst_iso(p.updated_at),
         })
 
     # ProgressPlan がまだない有効プランを「待機中」として追加
@@ -346,8 +358,8 @@ async def get_progress_detail(
                 "total_count": delivery.total_count,
                 "success_count": delivery.success_count,
                 "fail_count": delivery.fail_count,
-                "started_at": delivery.started_at.isoformat() if delivery.started_at else None,
-                "completed_at": delivery.completed_at.isoformat() if delivery.completed_at else None,
+                "started_at": _to_jst_iso(delivery.started_at),
+                "completed_at": _to_jst_iso(delivery.completed_at),
                 "status": delivery.status,
             }
 
@@ -364,7 +376,7 @@ async def get_progress_detail(
                     "member_no": di.member_no_snapshot,
                     "email": user.email if user else "-",
                     "status": di.status,
-                    "sent_at": di.sent_at.isoformat() if di.sent_at else None,
+                    "sent_at": _to_jst_iso(di.sent_at),
                     "error_message": di.last_error_message,
                 })
 

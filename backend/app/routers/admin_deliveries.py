@@ -3,8 +3,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from app.core.database import get_db
+
+JST = ZoneInfo("Asia/Tokyo")
+UTC = ZoneInfo("UTC")
+
+
+def _to_jst_iso(dt: datetime) -> str:
+    """DateTimeをJSTに変換してISO形式で返す"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(JST).isoformat()
 from app.models.delivery import Delivery
 from app.models.plan import Plan
 from app.routers.deps import require_admin
@@ -51,9 +64,9 @@ async def list_deliveries(
             "total_count": d.total_count,
             "success_count": d.success_count,
             "fail_count": d.fail_count,
-            "started_at": d.started_at.isoformat() if d.started_at else None,
-            "completed_at": d.completed_at.isoformat() if d.completed_at else None,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "started_at": _to_jst_iso(d.started_at),
+            "completed_at": _to_jst_iso(d.completed_at),
+            "created_at": _to_jst_iso(d.created_at),
         })
 
     return {"total": total, "deliveries": result}
