@@ -200,7 +200,7 @@ async def request_password_reset(
     # ユーザーの存在有無に関わらず同じレスポンス (情報漏洩防止)
     if user and user.is_active:
         token = await auth_service.create_reset_token(r, user.id)
-        reset_url = f"{settings.SITE_URL}/public/password-reset.html?token={token}"
+        reset_url = f"{settings.SITE_URL}/password-reset.html?token={token}"
         send_password_reset_email(
             to_email=user.email,
             name=f"{user.name_last} {user.name_first}",
