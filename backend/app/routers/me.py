@@ -138,9 +138,9 @@ async def confirm_password_change(
     user.password_hash = auth_service.hash_password(data.new_password)
     db.commit()
 
-    # 他のセッションを無効化（現在のセッションは維持）
+    # セキュリティ: 他のセッションを無効化（現在のセッションは維持）
     current_session_id = request.cookies.get("session_id")
-    destroyed_count = await invalidate_user_sessions(r, user.id, exclude_session_id=current_session_id)
+    await invalidate_user_sessions(r, user.id, exclude_session_id=current_session_id)
 
     return PasswordChangeResponse(message="パスワードを変更しました")
 
