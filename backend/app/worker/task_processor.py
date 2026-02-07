@@ -1,6 +1,6 @@
 """タスク処理ループ"""
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy import and_
 
@@ -99,7 +99,21 @@ def process_pending_tasks():
 
 def _get_next_task(db) -> ProgressPlan:
     """優先順位に基づいて次のタスクを取得"""
-    today = datetime.now(JST).date()
+    now = datetime.now(JST)
+    today = now.date()
+    hang_threshold = now - timedelta(minutes=30)
+
+    # 1: ハングタスク (status=1で30分以上経過) → status=0にリセットして再処理
+    hung_task = db.query(ProgressPlan).filter(
+        ProgressPlan.status == 1,
+        ProgressPlan.date == today,
+        ProgressPlan.updated_at < hang_threshold.replace(tzinfo=None),
+    ).first()
+    if hung_task:
+        logger.warning(f"ハングタスク検出: progress_id={hung_task.id}, リセットして再処理")
+        hung_task.status = 0
+        db.commit()
+        return hung_task
 
     # 3: エラー (リトライ回数制限内)
     task = db.query(ProgressPlan).filter(
