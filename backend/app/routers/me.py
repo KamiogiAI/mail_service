@@ -103,11 +103,13 @@ async def request_password_change(
         raise HTTPException(status_code=429, detail="認証がロックされています。しばらくお待ちください。")
 
     # 認証コードをメール送信
-    send_password_change_code_email(
+    success = send_password_change_code_email(
         to_email=user.email,
         name=f"{user.name_last} {user.name_first}",
         code=code,
     )
+    if not success:
+        raise HTTPException(status_code=500, detail="認証コードの送信に失敗しました。しばらくしてからお試しください。")
 
     # 一時トークン生成
     token = await auth_service.create_password_change_token(r, user.id)
