@@ -8,6 +8,13 @@ from app.core.redis import get_redis
 from app.core.session import create_session, destroy_session, refresh_session_id, get_session
 from app.core.csrf import generate_csrf_token
 from app.core.config import settings
+from app.core.rate_limit import (
+    limiter,
+    LOGIN_RATE_LIMIT,
+    REGISTER_RATE_LIMIT,
+    PASSWORD_RESET_RATE_LIMIT,
+    VERIFY_CODE_RATE_LIMIT,
+)
 from app.schemas.auth import (
     RegisterRequest,
     VerifyEmailRequest,
@@ -25,7 +32,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=AuthResponse)
-async def register(req: RegisterRequest, db: Session = Depends(get_db), r=Depends(get_redis)):
+@limiter.limit(REGISTER_RATE_LIMIT)
+async def register(request: Request, req: RegisterRequest, db: Session = Depends(get_db), r=Depends(get_redis)):
     """会員登録"""
     # 既存ユーザーチェック
     existing = auth_service.get_user_by_email(db, req.email)
@@ -54,7 +62,9 @@ async def register(req: RegisterRequest, db: Session = Depends(get_db), r=Depend
 
 
 @router.post("/verify-email", response_model=AuthResponse)
+@limiter.limit(VERIFY_CODE_RATE_LIMIT)
 async def verify_email(
+    request: Request,
     req: VerifyEmailRequest,
     response: Response,
     db: Session = Depends(get_db),
@@ -90,7 +100,9 @@ async def verify_email(
 
 
 @router.post("/resend-code", response_model=AuthResponse)
+@limiter.limit(VERIFY_CODE_RATE_LIMIT)
 async def resend_verify_code(
+    request: Request,
     user_id: int,
     db: Session = Depends(get_db),
     r=Depends(get_redis),
@@ -113,7 +125,9 @@ async def resend_verify_code(
 
 
 @router.post("/login", response_model=AuthResponse)
+@limiter.limit(LOGIN_RATE_LIMIT)
 async def login(
+    request: Request,
     req: LoginRequest,
     response: Response,
     db: Session = Depends(get_db),
@@ -174,7 +188,9 @@ async def logout(request: Request, response: Response, r=Depends(get_redis)):
 
 
 @router.post("/password-reset/request", response_model=AuthResponse)
+@limiter.limit(PASSWORD_RESET_RATE_LIMIT)
 async def request_password_reset(
+    request: Request,
     req: PasswordResetRequest,
     db: Session = Depends(get_db),
     r=Depends(get_redis),
@@ -194,7 +210,9 @@ async def request_password_reset(
 
 
 @router.post("/password-reset/confirm", response_model=AuthResponse)
+@limiter.limit(PASSWORD_RESET_RATE_LIMIT)
 async def confirm_password_reset(
+    request: Request,
     req: PasswordResetConfirm,
     db: Session = Depends(get_db),
     r=Depends(get_redis),
