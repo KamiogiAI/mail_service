@@ -183,9 +183,13 @@ async def get_answers(
     db: Session = Depends(get_db),
 ):
     """質問回答取得 (他プランからの var_name 一致引き継ぎ付き)"""
+    from app.core.logging import get_logger
+    logger = get_logger(__name__)
+    
     questions = db.query(PlanQuestion).filter(PlanQuestion.plan_id == plan_id).order_by(PlanQuestion.sort_order).all()
     answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
     answer_map = {a.question_id: a.answer_value for a in answers}
+    logger.info(f"get_answers: plan_id={plan_id}, user_id={user.id}, questions={len(questions)}, answers={len(answers)}, answer_map={answer_map}")
 
     result = []
     for q in questions:
