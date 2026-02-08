@@ -164,9 +164,43 @@ function renderPlanCard(s) {
         </div>
         ${showCancel ? `
         <div class="plan-actions">
+            <button class="d-btn d-btn-secondary d-btn-sm" onclick="showPlanChangeModal()">プラン変更</button>
             <button class="d-btn d-btn-ghost d-btn-sm" onclick="cancelSub(${s.id})">解約する</button>
         </div>` : ''}
     </div>`;
+}
+
+function showPlanChangeModal() {
+    // モーダルが既にあれば削除
+    const existing = document.getElementById('plan-change-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'plan-change-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    modal.innerHTML = `
+        <div style="background:#fff;padding:24px;border-radius:12px;max-width:400px;width:90%;text-align:center;">
+            <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">プランを変更するには次の画面で<br>「<strong>サブスクリプションを更新</strong>」をタップしてください。</p>
+            <div style="display:flex;gap:12px;justify-content:center;">
+                <button class="d-btn d-btn-ghost d-btn-sm" onclick="closePlanChangeModal()">キャンセル</button>
+                <button class="d-btn d-btn-primary d-btn-sm" onclick="goToBillingPortal()">遷移する</button>
+            </div>
+        </div>
+    `;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closePlanChangeModal();
+    });
+    document.body.appendChild(modal);
+}
+
+function closePlanChangeModal() {
+    const modal = document.getElementById('plan-change-modal');
+    if (modal) modal.remove();
+}
+
+function goToBillingPortal() {
+    closePlanChangeModal();
+    openBillingPortal();
 }
 
 async function cancelSub(subId) {
