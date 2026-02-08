@@ -431,12 +431,20 @@ async function toggleHistory(planId) {
                         const dateStr = t.date
                             ? new Date(t.date).toLocaleDateString('ja-JP', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
                             : '初期値';
+                        // 配列JSON（checkbox/array型）をカンマ区切りに変換
+                        let displayVal = t.value || '-';
+                        try {
+                            const parsed = JSON.parse(displayVal);
+                            if (Array.isArray(parsed)) {
+                                displayVal = parsed.length > 0 ? parsed.join(', ') : '未設定';
+                            }
+                        } catch { /* JSONでなければそのまま */ }
                         return `
                         <div class="tl-row${isLast ? ' tl-current' : ''}">
                             <div class="tl-dot"></div>
                             <div class="tl-content">
                                 <span class="tl-date">${esc(dateStr)}</span>
-                                <span class="tl-value">${esc(t.value || '-')}${isLast ? ' <span class="tl-badge">現在</span>' : ''}</span>
+                                <span class="tl-value">${esc(displayVal)}${isLast ? ' <span class="tl-badge">現在</span>' : ''}</span>
                             </div>
                         </div>`;
                     }).join('')}
