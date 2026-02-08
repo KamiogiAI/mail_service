@@ -232,6 +232,10 @@ async def save_answers(
     db: Session = Depends(get_db),
 ):
     """質問回答保存 (track_changes=True の質問は変更履歴を記録)"""
+    from app.core.logging import get_logger
+    logger = get_logger(__name__)
+    logger.info(f"save_answers called: plan_id={plan_id}, user_id={user.id}, answers={answers}")
+    
     # プランアクセス権チェック: 購読中またはこれから購読するプランのみ許可
     active_statuses = ["trialing", "active", "admin_added"]
     has_subscription = db.query(Subscription).filter(
