@@ -76,6 +76,15 @@ def main():
         max_instances=1,
     )
 
+    # 5分ごと: ダウングレード予約適用
+    from app.scheduler.plan_change_applier import apply_pending_plan_changes
+    scheduler.add_job(
+        apply_pending_plan_changes,
+        CronTrigger(minute="*/5", timezone="Asia/Tokyo"),
+        id="plan_change_applier",
+        max_instances=1,
+    )
+
     # 23:55 JST: 日次レポート
     from app.scheduler.daily_report import daily_report_job
     scheduler.add_job(

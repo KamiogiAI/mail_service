@@ -20,5 +20,7 @@ class Subscription(Base):
     current_period_start = Column(DateTime, nullable=True)
     current_period_end = Column(DateTime, nullable=True)
     trial_end = Column(DateTime, nullable=True)
+    scheduled_plan_id = Column(Integer, ForeignKey("plans.id", ondelete="SET NULL"), nullable=True, comment="ダウングレード予定プランID")
+    scheduled_change_at = Column(DateTime, nullable=True, comment="プラン変更予定日時")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
