@@ -186,6 +186,7 @@ def get_subscription_discount_info(subscription_id: str) -> dict:
     
     Returns:
         dict: {
+            "stripe_coupon_id": StripeのクーポンID or None,
             "discount_name": クーポン名 or None,
             "discount_percent": 割引率(%) or None,
             "discount_amount": 割引額(円) or None,
@@ -197,20 +198,22 @@ def get_subscription_discount_info(subscription_id: str) -> dict:
         
         discount = sub.get("discount")
         if not discount:
-            return {"discount_name": None, "discount_percent": None, "discount_amount": None}
+            return {"stripe_coupon_id": None, "discount_name": None, "discount_percent": None, "discount_amount": None}
         
         coupon = discount.get("coupon", {})
+        stripe_coupon_id = coupon.get("id")
         discount_name = coupon.get("name") or coupon.get("id")
         discount_percent = coupon.get("percent_off")  # 例: 10.0 (10%)
         discount_amount = coupon.get("amount_off")  # 単位: 通貨の最小単位 (円なら円)
         
         return {
+            "stripe_coupon_id": stripe_coupon_id,
             "discount_name": discount_name,
             "discount_percent": discount_percent,
             "discount_amount": discount_amount,
         }
     except Exception:
-        return {"discount_name": None, "discount_percent": None, "discount_amount": None}
+        return {"stripe_coupon_id": None, "discount_name": None, "discount_percent": None, "discount_amount": None}
 
 
 def construct_webhook_event(payload: bytes, sig_header: str, secret: str):
