@@ -157,6 +157,15 @@ def detect_and_handle_plan_change(
         effective_date = current_period_end or sub.current_period_end
         _schedule_plan_downgrade(db, sub, old_plan, new_plan, effective_date, stripe_event_id)
 
+    # プラン変更時はクーポン/プロモーションコードを削除
+    # (特定プラン向けのクーポンが別プランに引き継がれるのを防ぐ)
+    if sub.stripe_subscription_id:
+        from app.services import stripe_service
+        if stripe_service.remove_subscription_coupon(sub.stripe_subscription_id):
+            logger.info(f"プラン変更に伴いクーポン削除: subscription_id={sub.id}")
+        else:
+            logger.warning(f"クーポン削除失敗: subscription_id={sub.id}")
+
 
 def _apply_plan_change_immediately(
     db: Session,
