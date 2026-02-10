@@ -29,5 +29,10 @@ class SubscriptionInfo(BaseModel):
     trial_end: Optional[datetime] = None
     scheduled_plan_name: Optional[str] = None
     scheduled_change_at: Optional[datetime] = None
+    # 割引情報
+    discount_name: Optional[str] = None  # クーポン/プロモーション名
+    discount_percent: Optional[float] = None  # 割引率（%）
+    discount_amount: Optional[int] = None  # 割引額（円）
+    actual_price: Optional[int] = None  # 実際の請求額（割引後）
 
     model_config = {"from_attributes": True}
