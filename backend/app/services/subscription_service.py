@@ -156,15 +156,7 @@ def detect_and_handle_plan_change(
         # current_period_endがNoneの場合、DBの値を使う
         effective_date = current_period_end or sub.current_period_end
         _schedule_plan_downgrade(db, sub, old_plan, new_plan, effective_date, stripe_event_id)
-
-    # プラン変更時はクーポン/プロモーションコードを削除
-    # (特定プラン向けのクーポンが別プランに引き継がれるのを防ぐ)
-    if sub.stripe_subscription_id:
-        from app.services import stripe_service
-        if stripe_service.remove_subscription_coupon(sub.stripe_subscription_id):
-            logger.info(f"プラン変更に伴いクーポン削除: subscription_id={sub.id}")
-        else:
-            logger.warning(f"クーポン削除失敗: subscription_id={sub.id}")
+        # ダウングレードの場合、クーポン削除は実際の適用時(apply_scheduled_plan_changes)で行う
 
 
 def _apply_plan_change_immediately(
@@ -205,6 +197,15 @@ def _apply_plan_change_immediately(
         f"プラン変更適用: subscription_id={sub.id}, "
         f"{old_name}(id={old_plan_id}) → {new_plan.name}(id={new_plan.id}) [{change_type}]"
     )
+
+    # アップグレード時はクーポン/プロモーションコードを即時削除
+    # (特定プラン向けのクーポンが別プランに引き継がれるのを防ぐ)
+    if sub.stripe_subscription_id:
+        from app.services import stripe_service
+        if stripe_service.remove_subscription_coupon(sub.stripe_subscription_id):
+            logger.info(f"アップグレードに伴いクーポン削除: subscription_id={sub.id}")
+        else:
+            logger.warning(f"クーポン削除失敗: subscription_id={sub.id}")
 
 
 def _schedule_plan_downgrade(
@@ -281,6 +282,15 @@ def apply_scheduled_plan_changes(db: Session, now: datetime):
         # 回答引き継ぎ
         if sub.user_id:
             migrate_answers_on_plan_change(db, sub.user_id, old_plan_id, new_plan_id)
+
+        # ダウングレード適用時にクーポン/プロモーションコードを削除
+        # (特定プラン向けのクーポンが別プランに引き継がれるのを防ぐ)
+        if sub.stripe_subscription_id:
+            from app.services import stripe_service
+            if stripe_service.remove_subscription_coupon(sub.stripe_subscription_id):
+                logger.info(f"ダウングレード適用に伴いクーポン削除: subscription_id={sub.id}")
+            else:
+                logger.warning(f"クーポン削除失敗: subscription_id={sub.id}")
 
         logger.info(f"ダウングレード適用: subscription_id={sub.id}, plan {old_plan_id} → {new_plan_id}")
 
