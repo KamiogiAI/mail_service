@@ -167,6 +167,20 @@ def retrieve_subscription(subscription_id: str) -> dict:
     return stripe.Subscription.retrieve(subscription_id)
 
 
+def remove_subscription_coupon(subscription_id: str) -> bool:
+    """Stripeのsubscriptionからクーポン/割引を削除
+    
+    Returns:
+        bool: 成功したらTrue
+    """
+    _init_stripe()
+    try:
+        stripe.Subscription.modify(subscription_id, coupon="")
+        return True
+    except Exception:
+        return False
+
+
 def get_subscription_discount_info(subscription_id: str) -> dict:
     """Stripeのsubscriptionから割引情報を取得
     
