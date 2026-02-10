@@ -153,7 +153,9 @@ def detect_and_handle_plan_change(
         _apply_plan_change_immediately(db, sub, old_plan, new_plan, change_type, stripe_event_id)
     else:
         # ダウングレード: 期間終了時に適用 (支払い済み期間は上位プランを維持)
-        _schedule_plan_downgrade(db, sub, old_plan, new_plan, current_period_end, stripe_event_id)
+        # current_period_endがNoneの場合、DBの値を使う
+        effective_date = current_period_end or sub.current_period_end
+        _schedule_plan_downgrade(db, sub, old_plan, new_plan, effective_date, stripe_event_id)
 
 
 def _apply_plan_change_immediately(
