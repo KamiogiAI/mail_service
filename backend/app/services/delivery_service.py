@@ -18,6 +18,7 @@ from app.models.system_log import SystemLog
 from app.services.openai_service import generate_email_content
 from app.services.variable_resolver import resolve_variables, build_answers_dict
 from app.services.resend_service import send_email
+import json
 from app.services.firestore_external_service import load_external_data
 from app.services.summary_service import (
     get_summary_setting, get_recent_summaries,
@@ -113,7 +114,7 @@ def execute_plan_delivery(
         for item_name, item_data in split_items:
             for user in users:
                 user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
-                answers_dict = build_answers_dict(questions, user_answers)
+                answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
 
                 user_prompt = prompt
                 if summary_setting:
@@ -184,7 +185,7 @@ def execute_plan_delivery(
         # 通常送信: ユーザーごとにGPT生成
         for user in users:
             user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
-            answers_dict = build_answers_dict(questions, user_answers)
+            answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
 
             # あらすじ注入
             user_prompt = prompt
@@ -383,6 +384,42 @@ def _log_event(
     )
     db.add(log)
     db.commit()
+
+
+def _build_answers_with_fallback(
+    db: Session, user_id: int, plan_id: int, questions: list, user_answers: list,
+) -> dict:
+    """回答辞書を構築 (同一 var_name の他プラン回答をフォールバック)"""
+    answer_map = {a.question_id: a.answer_value for a in user_answers}
+    result = {}
+
+    for q in questions:
+        raw_value = answer_map.get(q.id, "")
+
+        # フォールバック: 未回答なら他プランの同一 var_name の回答を探す
+        if not raw_value and q.var_name:
+            other = db.query(UserAnswer).join(
+                PlanQuestion, UserAnswer.question_id == PlanQuestion.id
+            ).filter(
+                UserAnswer.user_id == user_id,
+                PlanQuestion.var_name == q.var_name,
+                PlanQuestion.plan_id != plan_id,
+                UserAnswer.answer_value != None,
+                UserAnswer.answer_value != "",
+            ).first()
+            if other:
+                raw_value = other.answer_value
+
+        if q.question_type in ("checkbox", "array") and raw_value:
+            try:
+                parsed = json.loads(raw_value)
+                result[q.var_name] = parsed
+            except (json.JSONDecodeError, TypeError):
+                result[q.var_name] = raw_value
+        else:
+            result[q.var_name] = raw_value or ""
+
+    return result
 
 
 def _get_firebase_credential(db: Session, external_setting: PlanExternalDataSetting) -> Optional[str]:

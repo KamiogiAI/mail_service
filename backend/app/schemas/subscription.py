@@ -27,9 +27,7 @@ class SubscriptionInfo(BaseModel):
     cancel_at_period_end: bool
     current_period_end: Optional[datetime] = None
     trial_end: Optional[datetime] = None
+    scheduled_plan_name: Optional[str] = None
+    scheduled_change_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
-
-
-class ChangePlanRequest(BaseModel):
-    new_plan_id: int

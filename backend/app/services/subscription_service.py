@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime
 
 from app.models.subscription import Subscription
+from app.models.subscription_plan_change import SubscriptionPlanChange
 from app.models.plan import Plan
 from app.models.user import User
 from app.models.service_setting import ServiceSetting
@@ -85,7 +86,7 @@ def update_subscription_from_stripe(
     current_period_end: datetime = None,
     trial_end: datetime = None,
 ):
-    """Stripe webhookからの購読更新"""
+    """Stripe webhookからの購読更新 (ステータス・期間情報)"""
     sub = db.query(Subscription).filter(
         Subscription.stripe_subscription_id == stripe_subscription_id
     ).first()
@@ -104,14 +105,257 @@ def update_subscription_from_stripe(
     db.commit()
 
 
-def handle_subscription_deleted(db: Session, stripe_subscription_id: str):
-    """購読削除処理"""
+# =========================================================
+# プラン変更検知・処理
+# =========================================================
+
+def detect_and_handle_plan_change(
+    db: Session,
+    stripe_subscription_id: str,
+    new_stripe_price_id: str,
+    current_period_end: datetime = None,
+    stripe_event_id: str = None,
+):
+    """Stripe webhookからのプラン変更を検知し、アップグレード/ダウングレードを処理"""
     sub = db.query(Subscription).filter(
         Subscription.stripe_subscription_id == stripe_subscription_id
     ).first()
     if not sub:
         return
+
+    new_plan = db.query(Plan).filter(Plan.stripe_price_id == new_stripe_price_id).first()
+    if not new_plan:
+        logger.warning(f"プラン変更検知: 不明なprice_id={new_stripe_price_id}")
+        return
+
+    # 現在のplan_idと同じ → 変更なし (ダウングレード予約が残っていたらクリア)
+    if new_plan.id == sub.plan_id:
+        if sub.scheduled_plan_id:
+            logger.info(f"プラン変更取消: subscription_id={sub.id}, 元のプランに戻りました")
+            sub.scheduled_plan_id = None
+            sub.scheduled_change_at = None
+            # 未適用の変更履歴を取消
+            _cancel_pending_plan_changes(db, sub.id)
+            db.commit()
+        return
+
+    # 既にスケジュール済みの変更先と同じ → 何もしない
+    if sub.scheduled_plan_id == new_plan.id:
+        return
+
+    old_plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+    old_price = old_plan.price if old_plan else 0
+    new_price = new_plan.price
+
+    if new_price >= old_price:
+        # アップグレード or 同額: 即時適用
+        change_type = "upgrade" if new_price > old_price else "lateral"
+        _apply_plan_change_immediately(db, sub, old_plan, new_plan, change_type, stripe_event_id)
+    else:
+        # ダウングレード: 期間終了時に適用 (支払い済み期間は上位プランを維持)
+        _schedule_plan_downgrade(db, sub, old_plan, new_plan, current_period_end, stripe_event_id)
+
+
+def _apply_plan_change_immediately(
+    db: Session,
+    sub: Subscription,
+    old_plan: Plan,
+    new_plan: Plan,
+    change_type: str,
+    stripe_event_id: str = None,
+):
+    """プラン変更を即時適用 (アップグレード・同額変更)"""
+    old_plan_id = sub.plan_id
+    sub.plan_id = new_plan.id
+    sub.scheduled_plan_id = None
+    sub.scheduled_change_at = None
+
+    # 未適用のダウングレード予約があればキャンセル
+    _cancel_pending_plan_changes(db, sub.id)
+
+    # 変更履歴記録
+    change = SubscriptionPlanChange(
+        subscription_id=sub.id,
+        old_plan_id=old_plan_id,
+        new_plan_id=new_plan.id,
+        change_type=change_type,
+        applied=True,
+        stripe_event_id=stripe_event_id,
+    )
+    db.add(change)
+    db.commit()
+
+    # 回答引き継ぎ
+    if sub.user_id:
+        migrate_answers_on_plan_change(db, sub.user_id, old_plan_id, new_plan.id)
+
+    old_name = old_plan.name if old_plan else "不明"
+    logger.info(
+        f"プラン変更適用: subscription_id={sub.id}, "
+        f"{old_name}(id={old_plan_id}) → {new_plan.name}(id={new_plan.id}) [{change_type}]"
+    )
+
+
+def _schedule_plan_downgrade(
+    db: Session,
+    sub: Subscription,
+    old_plan: Plan,
+    new_plan: Plan,
+    period_end: datetime = None,
+    stripe_event_id: str = None,
+):
+    """ダウングレードを期間終了時にスケジュール"""
+    # 既存の未適用予約をキャンセル
+    _cancel_pending_plan_changes(db, sub.id)
+
+    sub.scheduled_plan_id = new_plan.id
+    sub.scheduled_change_at = period_end
+
+    change = SubscriptionPlanChange(
+        subscription_id=sub.id,
+        old_plan_id=sub.plan_id,
+        new_plan_id=new_plan.id,
+        change_type="downgrade",
+        effective_at=period_end,
+        applied=False,
+        stripe_event_id=stripe_event_id,
+    )
+    db.add(change)
+    db.commit()
+
+    old_name = old_plan.name if old_plan else "不明"
+    logger.info(
+        f"ダウングレード予約: subscription_id={sub.id}, "
+        f"{old_name} → {new_plan.name}, 適用予定={period_end}"
+    )
+
+
+def _cancel_pending_plan_changes(db: Session, subscription_id: int):
+    """未適用のプラン変更履歴をキャンセル"""
+    pending = db.query(SubscriptionPlanChange).filter(
+        SubscriptionPlanChange.subscription_id == subscription_id,
+        SubscriptionPlanChange.applied == False,
+    ).all()
+    for p in pending:
+        p.applied = True  # 取消扱い (change_typeはそのまま残す)
+    if pending:
+        db.flush()
+
+
+def apply_scheduled_plan_changes(db: Session, now: datetime):
+    """期限到来したダウングレードを一括適用 (スケジューラから呼ばれる)"""
+    subs = db.query(Subscription).filter(
+        Subscription.scheduled_plan_id != None,
+        Subscription.scheduled_change_at <= now,
+        Subscription.status.in_(["trialing", "active", "past_due", "admin_added"]),
+    ).all()
+
+    for sub in subs:
+        old_plan_id = sub.plan_id
+        new_plan_id = sub.scheduled_plan_id
+
+        sub.plan_id = new_plan_id
+        sub.scheduled_plan_id = None
+        sub.scheduled_change_at = None
+
+        # 変更履歴を適用済みに更新
+        pending_change = db.query(SubscriptionPlanChange).filter(
+            SubscriptionPlanChange.subscription_id == sub.id,
+            SubscriptionPlanChange.new_plan_id == new_plan_id,
+            SubscriptionPlanChange.applied == False,
+        ).first()
+        if pending_change:
+            pending_change.applied = True
+
+        # 回答引き継ぎ
+        if sub.user_id:
+            migrate_answers_on_plan_change(db, sub.user_id, old_plan_id, new_plan_id)
+
+        logger.info(f"ダウングレード適用: subscription_id={sub.id}, plan {old_plan_id} → {new_plan_id}")
+
+    if subs:
+        db.commit()
+
+    return len(subs)
+
+
+# =========================================================
+# 回答引き継ぎ
+# =========================================================
+
+def migrate_answers_on_plan_change(db: Session, user_id: int, old_plan_id: int, new_plan_id: int):
+    """プラン変更時に同一 var_name の回答を新プランの質問にコピー"""
+    from app.models.plan_question import PlanQuestion
+    from app.models.user_answer import UserAnswer
+
+    old_questions = db.query(PlanQuestion).filter(PlanQuestion.plan_id == old_plan_id).all()
+    new_questions = db.query(PlanQuestion).filter(PlanQuestion.plan_id == new_plan_id).all()
+
+    # 旧プランの var_name → 回答値 マップ
+    old_var_map = {}
+    for q in old_questions:
+        answer = db.query(UserAnswer).filter(
+            UserAnswer.user_id == user_id,
+            UserAnswer.question_id == q.id,
+        ).first()
+        if answer and answer.answer_value:
+            old_var_map[q.var_name] = answer.answer_value
+
+    if not old_var_map:
+        return
+
+    copied_count = 0
+    for nq in new_questions:
+        if nq.var_name not in old_var_map:
+            continue
+        existing = db.query(UserAnswer).filter(
+            UserAnswer.user_id == user_id,
+            UserAnswer.question_id == nq.id,
+        ).first()
+        if not existing:
+            db.add(UserAnswer(
+                user_id=user_id,
+                question_id=nq.id,
+                answer_value=old_var_map[nq.var_name],
+            ))
+            copied_count += 1
+
+    if copied_count:
+        db.commit()
+        logger.info(f"回答引き継ぎ: user_id={user_id}, {old_plan_id} → {new_plan_id}, {copied_count}件コピー")
+
+
+# =========================================================
+# 既存: 削除・決済失敗・決済成功
+# =========================================================
+
+def handle_subscription_deleted(db: Session, stripe_subscription_id: str):
+    """購読削除処理 (期限到来のダウングレード予約があれば先に適用)"""
+    sub = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == stripe_subscription_id
+    ).first()
+    if not sub:
+        return
+
+    # ダウングレード予約が残っていれば、キャンセル前に適用
+    if sub.scheduled_plan_id:
+        old_plan_id = sub.plan_id
+        new_plan_id = sub.scheduled_plan_id
+        sub.plan_id = new_plan_id
+
+        pending_change = db.query(SubscriptionPlanChange).filter(
+            SubscriptionPlanChange.subscription_id == sub.id,
+            SubscriptionPlanChange.new_plan_id == new_plan_id,
+            SubscriptionPlanChange.applied == False,
+        ).first()
+        if pending_change:
+            pending_change.applied = True
+
+        logger.info(f"購読終了前にダウングレード適用: subscription_id={sub.id}, {old_plan_id} → {new_plan_id}")
+
     sub.status = "canceled"
+    sub.scheduled_plan_id = None
+    sub.scheduled_change_at = None
     db.commit()
     logger.info(f"購読終了: subscription_id={sub.id}")
 
@@ -134,6 +378,8 @@ def force_cancel_plan_subscriptions(db: Session, plan_id: int):
             except Exception as e:
                 logger.error(f"Stripe購読解約失敗: {sub.stripe_subscription_id} - {e}")
         sub.status = "canceled"
+        sub.scheduled_plan_id = None
+        sub.scheduled_change_at = None
 
         # 通知メール送信
         if sub.user_id:

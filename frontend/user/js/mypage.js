@@ -137,8 +137,30 @@ async function loadPlanCards() {
 function renderPlanCard(s) {
     // admin_added はStripe連携なし・期間なしのため解約ボタンを表示しない
     const isAdminAdded = s.status === 'admin_added';
-    const isActive = ['active', 'trialing'].includes(s.status) && !s.cancel_at_period_end;
+    const isActive = ['active', 'trialing', 'past_due'].includes(s.status) && !s.cancel_at_period_end;
     const showCancel = isActive && !isAdminAdded;
+    const isPastDue = s.status === 'past_due';
+
+    // ダウングレード予約表示
+    let scheduledHtml = '';
+    if (s.scheduled_plan_name) {
+        scheduledHtml = `
+        <div class="meta-item" style="border-top:1px solid #eee;padding-top:8px;margin-top:4px;">
+            <div class="meta-label">プラン変更予定</div>
+            <div class="meta-value">${esc(s.scheduled_plan_name)} (${fmtDate(s.scheduled_change_at)}〜)</div>
+        </div>`;
+    }
+
+    // past_due 警告メッセージ
+    let pastDueHtml = '';
+    if (isPastDue) {
+        pastDueHtml = `
+        <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#856404;">
+            お支払いが確認できていません。配信が一時停止されています。<br>
+            <a href="javascript:void(0)" onclick="openBillingPortal()" style="color:#0056b3;">お支払い情報を更新する</a>
+        </div>`;
+    }
+
     return `
     <div class="dash-card">
         <div class="dash-card-title">加入中プラン</div>
@@ -161,7 +183,9 @@ function renderPlanCard(s) {
                 <div class="meta-label">トライアル終了日</div>
                 <div class="meta-value">${fmtDate(s.trial_end)}</div>
             </div>` : ''}
+            ${scheduledHtml}
         </div>
+        ${pastDueHtml}
         ${showCancel ? `
         <div class="plan-actions">
             <button class="d-btn d-btn-secondary d-btn-sm" onclick="showPlanChangeModal()">プラン変更</button>

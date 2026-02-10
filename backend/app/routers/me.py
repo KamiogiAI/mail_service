@@ -350,8 +350,13 @@ async def delete_account(
         if sub.stripe_subscription_id:
             try:
                 stripe_service.cancel_subscription_immediately(sub.stripe_subscription_id)
-            except Exception:
-                pass
+            except Exception as e:
+                from app.core.logging import get_logger
+                get_logger(__name__).error(f"退会時Stripe解約失敗: {sub.stripe_subscription_id} - {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="決済の解約処理に失敗しました。サポートにお問い合わせください。",
+                )
         sub.status = "canceled"
         sub.user_id = None
 

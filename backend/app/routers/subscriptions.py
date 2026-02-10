@@ -1,4 +1,5 @@
 """購読ルーター: Subscribe, Billing Portal, Checkout Complete"""
+import urllib.parse
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -19,6 +20,17 @@ from app.core.logging import get_logger
 
 router = APIRouter(prefix="/api", tags=["subscriptions"])
 logger = get_logger(__name__)
+
+
+def _validate_redirect_url(url: str) -> str:
+    """リダイレクトURLの安全性を検証 (同一オリジンのみ許可)"""
+    if not url:
+        return url
+    parsed = urllib.parse.urlparse(url)
+    site_parsed = urllib.parse.urlparse(settings.SITE_URL)
+    if parsed.netloc and parsed.netloc != site_parsed.netloc:
+        raise HTTPException(status_code=400, detail="不正なリダイレクトURLです")
+    return url
 
 
 @router.post("/subscribe")
@@ -92,10 +104,13 @@ async def subscribe(
     # トライアル判定 (プランごとの設定 + ユーザーの使用済みフラグ)
     trial_days = 30 if (plan.trial_enabled and not user.trial_used) else None
 
-    success_url = req.success_url or (
+    # リダイレクトURL検証 (オープンリダイレクト防止)
+    success_url = _validate_redirect_url(req.success_url) or (
         f"{settings.SITE_URL}/user/mypage.html?subscription=success&session_id={{CHECKOUT_SESSION_ID}}"
     )
-    cancel_url = req.cancel_url or f"{settings.SITE_URL}/user/subscribe.html?plan_id={plan.id}"
+    cancel_url = _validate_redirect_url(req.cancel_url) or (
+        f"{settings.SITE_URL}/user/subscribe.html?plan_id={plan.id}"
+    )
 
     checkout_url = stripe_service.create_checkout_session(
         price_id=plan.stripe_price_id,
@@ -224,6 +239,13 @@ async def my_subscriptions(
     result = []
     for sub in subs:
         plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+
+        # ダウングレード予約がある場合、予約先プラン名を取得
+        scheduled_plan_name = None
+        if sub.scheduled_plan_id:
+            scheduled_plan = db.query(Plan).filter(Plan.id == sub.scheduled_plan_id).first()
+            scheduled_plan_name = scheduled_plan.name if scheduled_plan else None
+
         info = SubscriptionInfo(
             id=sub.id,
             plan_id=sub.plan_id,
@@ -233,6 +255,8 @@ async def my_subscriptions(
             cancel_at_period_end=sub.cancel_at_period_end,
             current_period_end=sub.current_period_end,
             trial_end=sub.trial_end,
+            scheduled_plan_name=scheduled_plan_name,
+            scheduled_change_at=sub.scheduled_change_at,
         )
         result.append(info)
     return result

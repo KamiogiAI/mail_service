@@ -18,6 +18,8 @@ from app.models.report_delivery_item import ReportDeliveryItem
 from app.models.system_log import SystemLog
 from app.models.promotion_code import PromotionCode
 from app.models.user_answer_history import UserAnswerHistory
+from app.models.processed_stripe_event import ProcessedStripeEvent
+from app.models.subscription_plan_change import SubscriptionPlanChange
 
 __all__ = [
     "User",
@@ -39,4 +41,6 @@ __all__ = [
     "SystemLog",
     "PromotionCode",
     "UserAnswerHistory",
+    "ProcessedStripeEvent",
+    "SubscriptionPlanChange",
 ]
