@@ -9,6 +9,7 @@ from app.models.subscription_plan_change import SubscriptionPlanChange
 from app.models.plan import Plan
 from app.models.user import User
 from app.models.service_setting import ServiceSetting
+from app.models.promotion_code import PromotionCode
 from app.services import stripe_service
 from app.services.mail_service import send_subscription_cancel_email, send_payment_failed_email
 from app.core.logging import get_logger
@@ -159,6 +160,44 @@ def detect_and_handle_plan_change(
         # ダウングレードの場合、クーポン削除は実際の適用時(apply_scheduled_plan_changes)で行う
 
 
+def _should_remove_coupon(db: Session, stripe_subscription_id: str, new_plan_id: int) -> bool:
+    """クーポンを削除すべきか判定
+    
+    - クーポンが適用されていない → False
+    - eligible_plan_ids が null（全プラン対象）→ False
+    - eligible_plan_ids に新プランが含まれる → False
+    - eligible_plan_ids に新プランが含まれない → True
+    """
+    discount_info = stripe_service.get_subscription_discount_info(stripe_subscription_id)
+    stripe_coupon_id = discount_info.get("stripe_coupon_id")
+    
+    if not stripe_coupon_id:
+        # クーポン適用なし
+        return False
+    
+    # DBからPromotionCodeを検索
+    promo = db.query(PromotionCode).filter(
+        PromotionCode.stripe_coupon_id == stripe_coupon_id
+    ).first()
+    
+    if not promo:
+        # DBにないクーポン（手動適用など）→ 安全のため削除しない
+        logger.warning(f"Unknown coupon {stripe_coupon_id}, skipping removal")
+        return False
+    
+    if promo.eligible_plan_ids is None:
+        # 全プラン対象 → 削除しない
+        return False
+    
+    if new_plan_id in promo.eligible_plan_ids:
+        # 新プランが対象に含まれる → 削除しない
+        return False
+    
+    # 新プランが対象外 → 削除する
+    logger.info(f"Coupon {stripe_coupon_id} not eligible for plan {new_plan_id}, will remove")
+    return True
+
+
 def _apply_plan_change_immediately(
     db: Session,
     sub: Subscription,
@@ -198,10 +237,8 @@ def _apply_plan_change_immediately(
         f"{old_name}(id={old_plan_id}) → {new_plan.name}(id={new_plan.id}) [{change_type}]"
     )
 
-    # アップグレード時はクーポン/プロモーションコードを即時削除
-    # (特定プラン向けのクーポンが別プランに引き継がれるのを防ぐ)
-    if sub.stripe_subscription_id:
-        from app.services import stripe_service
+    # アップグレード時、新プランがクーポン対象外ならクーポンを削除
+    if sub.stripe_subscription_id and _should_remove_coupon(db, sub.stripe_subscription_id, new_plan.id):
         if stripe_service.remove_subscription_coupon(sub.stripe_subscription_id):
             logger.info(f"アップグレードに伴いクーポン削除: subscription_id={sub.id}")
         else:
@@ -283,10 +320,8 @@ def apply_scheduled_plan_changes(db: Session, now: datetime):
         if sub.user_id:
             migrate_answers_on_plan_change(db, sub.user_id, old_plan_id, new_plan_id)
 
-        # ダウングレード適用時にクーポン/プロモーションコードを削除
-        # (特定プラン向けのクーポンが別プランに引き継がれるのを防ぐ)
-        if sub.stripe_subscription_id:
-            from app.services import stripe_service
+        # ダウングレード適用時、新プランがクーポン対象外ならクーポンを削除
+        if sub.stripe_subscription_id and _should_remove_coupon(db, sub.stripe_subscription_id, new_plan_id):
             if stripe_service.remove_subscription_coupon(sub.stripe_subscription_id):
                 logger.info(f"ダウングレード適用に伴いクーポン削除: subscription_id={sub.id}")
             else:
