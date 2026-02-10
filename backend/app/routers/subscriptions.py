@@ -239,6 +239,7 @@ async def my_subscriptions(
     result = []
     for sub in subs:
         plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+        plan_price = plan.price if plan else 0
 
         # ダウングレード予約がある場合、予約先プラン名を取得
         scheduled_plan_name = None
@@ -246,17 +247,42 @@ async def my_subscriptions(
             scheduled_plan = db.query(Plan).filter(Plan.id == sub.scheduled_plan_id).first()
             scheduled_plan_name = scheduled_plan.name if scheduled_plan else None
 
+        # Stripeから割引情報を取得
+        discount_name = None
+        discount_percent = None
+        discount_amount = None
+        actual_price = plan_price
+
+        if sub.stripe_subscription_id:
+            try:
+                discount_info = stripe_service.get_subscription_discount_info(sub.stripe_subscription_id)
+                discount_name = discount_info.get("discount_name")
+                discount_percent = discount_info.get("discount_percent")
+                discount_amount = discount_info.get("discount_amount")
+
+                # 実際の請求額を計算
+                if discount_percent:
+                    actual_price = int(plan_price * (100 - discount_percent) / 100)
+                elif discount_amount:
+                    actual_price = max(0, plan_price - discount_amount)
+            except Exception:
+                pass  # Stripe取得失敗時は定価を使用
+
         info = SubscriptionInfo(
             id=sub.id,
             plan_id=sub.plan_id,
             plan_name=plan.name if plan else None,
-            plan_price=plan.price if plan else None,
+            plan_price=plan_price,
             status=sub.status,
             cancel_at_period_end=sub.cancel_at_period_end,
             current_period_end=sub.current_period_end,
             trial_end=sub.trial_end,
             scheduled_plan_name=scheduled_plan_name,
             scheduled_change_at=sub.scheduled_change_at,
+            discount_name=discount_name,
+            discount_percent=discount_percent,
+            discount_amount=discount_amount,
+            actual_price=actual_price,
         )
         result.append(info)
     return result

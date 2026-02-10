@@ -176,7 +176,11 @@ function renderPlanCard(s) {
             </div>
             <div class="meta-item">
                 <div class="meta-label">請求金額</div>
-                <div class="meta-value">${fmtPrice(s.plan_price)}</div>
+                <div class="meta-value">${s.discount_name ? `
+                    <span style="text-decoration:line-through;color:#999;font-size:0.9em;">${fmtPrice(s.plan_price)}</span>
+                    <span style="color:#e53935;font-weight:bold;"> → ${fmtPrice(s.actual_price)}</span>
+                    <div style="font-size:0.8em;color:#4caf50;">${s.discount_name}${s.discount_percent ? ` (${s.discount_percent}%OFF)` : ''}</div>
+                ` : fmtPrice(s.actual_price || s.plan_price)}</div>
             </div>` : ''}
             ${s.trial_end ? `
             <div class="meta-item">

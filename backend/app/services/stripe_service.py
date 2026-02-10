@@ -167,6 +167,38 @@ def retrieve_subscription(subscription_id: str) -> dict:
     return stripe.Subscription.retrieve(subscription_id)
 
 
+def get_subscription_discount_info(subscription_id: str) -> dict:
+    """Stripeのsubscriptionから割引情報を取得
+    
+    Returns:
+        dict: {
+            "discount_name": クーポン名 or None,
+            "discount_percent": 割引率(%) or None,
+            "discount_amount": 割引額(円) or None,
+        }
+    """
+    _init_stripe()
+    try:
+        sub = stripe.Subscription.retrieve(subscription_id, expand=["discount.coupon"])
+        
+        discount = sub.get("discount")
+        if not discount:
+            return {"discount_name": None, "discount_percent": None, "discount_amount": None}
+        
+        coupon = discount.get("coupon", {})
+        discount_name = coupon.get("name") or coupon.get("id")
+        discount_percent = coupon.get("percent_off")  # 例: 10.0 (10%)
+        discount_amount = coupon.get("amount_off")  # 単位: 通貨の最小単位 (円なら円)
+        
+        return {
+            "discount_name": discount_name,
+            "discount_percent": discount_percent,
+            "discount_amount": discount_amount,
+        }
+    except Exception:
+        return {"discount_name": None, "discount_percent": None, "discount_amount": None}
+
+
 def construct_webhook_event(payload: bytes, sig_header: str, secret: str):
     """Webhook イベントを構築・検証"""
     return stripe.Webhook.construct_event(payload, sig_header, secret)
