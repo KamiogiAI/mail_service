@@ -22,13 +22,23 @@ UTC = ZoneInfo("UTC")
 
 
 def _to_jst_iso(dt: datetime) -> str:
-    """DateTimeをJSTに変換してISO形式で返す"""
+    """DateTimeをJSTに変換してISO形式で返す (UTC保存のカラム用)"""
     if dt is None:
         return None
     # タイムゾーンなしの場合はUTCとして扱う
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(JST).isoformat()
+
+
+def _jst_iso(dt: datetime) -> str:
+    """既にJSTで保存されているDateTimeをISO形式で返す (started_at/completed_at用)"""
+    if dt is None:
+        return None
+    # 既にJSTで保存されているのでそのまま出力
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=JST)
+    return dt.isoformat()
 
 
 def _today_jst():
@@ -267,8 +277,8 @@ async def list_progress(
                 fail_count = delivery.fail_count
                 delivery_subject = delivery.subject
                 delivery_status = delivery.status
-                delivery_started_at = _to_jst_iso(delivery.started_at)
-                delivery_completed_at = _to_jst_iso(delivery.completed_at)
+                delivery_started_at = _jst_iso(delivery.started_at)
+                delivery_completed_at = _jst_iso(delivery.completed_at)
                 if delivery.started_at and delivery.completed_at:
                     duration_seconds = int((delivery.completed_at - delivery.started_at).total_seconds())
 
@@ -358,8 +368,8 @@ async def get_progress_detail(
                 "total_count": delivery.total_count,
                 "success_count": delivery.success_count,
                 "fail_count": delivery.fail_count,
-                "started_at": _to_jst_iso(delivery.started_at),
-                "completed_at": _to_jst_iso(delivery.completed_at),
+                "started_at": _jst_iso(delivery.started_at),
+                "completed_at": _jst_iso(delivery.completed_at),
                 "status": delivery.status,
             }
 
@@ -376,7 +386,7 @@ async def get_progress_detail(
                     "member_no": di.member_no_snapshot,
                     "email": user.email if user else "-",
                     "status": di.status,
-                    "sent_at": _to_jst_iso(di.sent_at),
+                    "sent_at": _jst_iso(di.sent_at),
                     "error_message": di.last_error_message,
                 })
 

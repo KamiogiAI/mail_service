@@ -12,12 +12,21 @@ UTC = ZoneInfo("UTC")
 
 
 def _to_jst_iso(dt: datetime) -> str:
-    """DateTimeをJSTに変換してISO形式で返す"""
+    """DateTimeをJSTに変換してISO形式で返す (UTC保存のカラム用)"""
     if dt is None:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(JST).isoformat()
+
+
+def _jst_iso(dt: datetime) -> str:
+    """既にJSTで保存されているDateTimeをISO形式で返す (started_at/completed_at用)"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=JST)
+    return dt.isoformat()
 from app.models.delivery import Delivery
 from app.models.plan import Plan
 from app.routers.deps import require_admin
@@ -64,8 +73,8 @@ async def list_deliveries(
             "total_count": d.total_count,
             "success_count": d.success_count,
             "fail_count": d.fail_count,
-            "started_at": _to_jst_iso(d.started_at),
-            "completed_at": _to_jst_iso(d.completed_at),
+            "started_at": _jst_iso(d.started_at),
+            "completed_at": _jst_iso(d.completed_at),
             "created_at": _to_jst_iso(d.created_at),
         })
 
