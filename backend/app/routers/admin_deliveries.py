@@ -81,3 +81,29 @@ async def delete_delivery(delivery_id: int, db: Session = Depends(get_db), _=Dep
     db.delete(delivery)
     db.commit()
     return {"message": "削除しました"}
+
+
+@router.post("/{delivery_id}/retry-failed")
+async def retry_failed_items(delivery_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """失敗したユーザーにのみ再送"""
+    from app.services.delivery_service import retry_failed_delivery
+    from app.models.delivery_item import DeliveryItem
+
+    # 失敗件数を先に確認
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="配信履歴が見つかりません")
+
+    failed_count = db.query(DeliveryItem).filter(
+        DeliveryItem.delivery_id == delivery_id,
+        DeliveryItem.status == 3,
+    ).count()
+
+    if failed_count == 0:
+        return {"message": "再送対象の失敗ユーザーがいません", "retried": 0, "success": 0, "failed": 0}
+
+    result = retry_failed_delivery(db, delivery_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result

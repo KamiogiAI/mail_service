@@ -227,6 +227,7 @@ const ProgressPage = {
                                 <td>
                                     ${p.id !== null ? `<div class="action-btns">
                                         ${p.delivery_id ? `<button class="btn btn-sm btn-secondary" onclick="ProgressPage.showDetail(${p.id})">詳細</button>` : ''}
+                                        ${p.fail_count > 0 ? `<button class="btn btn-sm btn-warning" onclick="ProgressPage.retryFailed(${p.id})">失敗分を再送</button>` : ''}
                                         <button class="btn btn-sm btn-secondary" onclick="ProgressPage.reset(${p.id})">リセット</button>
                                     </div>` : ''}
                                 </td>
@@ -415,6 +416,18 @@ const ProgressPage = {
         try {
             await API.post(`/api/admin/progress/${id}/reset`);
             this.loadProgress();
+        } catch (e) {
+            alert(e.message);
+        }
+    },
+
+    async retryFailed(id) {
+        if (!confirm('失敗したユーザーに再送しますか？（最大3回リトライします）')) return;
+        try {
+            const result = await API.post(`/api/admin/progress/${id}/retry-failed`);
+            alert(`再送完了: ${result.success}件成功 / ${result.failed}件失敗`);
+            this.loadProgress();
+            this.loadRecentDeliveries();
         } catch (e) {
             alert(e.message);
         }

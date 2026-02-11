@@ -410,3 +410,31 @@ async def toggle_emergency_stop(active: bool, _=Depends(require_admin)):
     """緊急停止フラグ切替"""
     set_emergency_stop(active)
     return {"message": f"緊急停止を{'有効' if active else '解除'}にしました", "active": active}
+
+
+@router.post("/{progress_id}/retry-failed")
+async def retry_failed_progress(progress_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """失敗したユーザーにのみ再送（進捗管理画面用）"""
+    from app.services.delivery_service import retry_failed_delivery
+
+    pp = db.query(ProgressPlan).filter(ProgressPlan.id == progress_id).first()
+    if not pp:
+        raise HTTPException(status_code=404, detail="進捗データが見つかりません")
+
+    if not pp.delivery_id:
+        raise HTTPException(status_code=400, detail="配信履歴がありません")
+
+    # 失敗件数を確認
+    failed_count = db.query(DeliveryItem).filter(
+        DeliveryItem.delivery_id == pp.delivery_id,
+        DeliveryItem.status == 3,
+    ).count()
+
+    if failed_count == 0:
+        return {"message": "再送対象の失敗ユーザーがいません", "retried": 0, "success": 0, "failed": 0}
+
+    result = retry_failed_delivery(db, pp.delivery_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    return result
