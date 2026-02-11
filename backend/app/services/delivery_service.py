@@ -29,6 +29,7 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 JST = ZoneInfo("Asia/Tokyo")
+MAX_RETRY = 3  # 最大リトライ回数
 
 
 def execute_plan_delivery(
@@ -133,22 +134,19 @@ def execute_plan_delivery(
                     name_first=user.name_first,
                 )
 
-                try:
-                    gpt_result = generate_email_content(
-                        prompt=resolved_prompt, model=plan.model,
-                        system_prompt=plan.system_prompt, api_key=api_key,
-                    )
-                    ok = _send_to_user(
-                        db, delivery, plan, user, questions,
-                        gpt_result, item_name, summary_setting, api_key,
-                    )
-                    if ok:
-                        success_count += 1
-                    else:
-                        fail_count += 1
-                except Exception as e:
-                    logger.error(f"送信失敗 (batch+vars): user_id={user.id}, item={item_name} - {e}")
-                    _create_delivery_item(db, delivery.id, user, document_key=item_name, status=3, error_msg=str(e))
+                ok = _send_with_retry(
+                    db=db,
+                    delivery=delivery,
+                    plan=plan,
+                    user=user,
+                    resolved_prompt=resolved_prompt,
+                    document_key=item_name,
+                    summary_setting=summary_setting,
+                    api_key=api_key,
+                )
+                if ok:
+                    success_count += 1
+                else:
                     fail_count += 1
 
                 time.sleep(throttle_seconds)
@@ -172,9 +170,15 @@ def execute_plan_delivery(
                 continue
 
             for user in users:
-                ok = _send_to_user(
-                    db, delivery, plan, user, questions,
-                    gpt_result, item_name, summary_setting, api_key,
+                ok = _send_email_with_retry(
+                    db=db,
+                    delivery=delivery,
+                    plan=plan,
+                    user=user,
+                    gpt_result=gpt_result,
+                    document_key=item_name,
+                    summary_setting=summary_setting,
+                    api_key=api_key,
                 )
                 if ok:
                     success_count += 1
@@ -204,22 +208,19 @@ def execute_plan_delivery(
                 name_first=user.name_first,
             )
 
-            try:
-                gpt_result = generate_email_content(
-                    prompt=resolved_prompt, model=plan.model,
-                    system_prompt=plan.system_prompt, api_key=api_key,
-                )
-                ok = _send_to_user(
-                    db, delivery, plan, user, questions,
-                    gpt_result, None, summary_setting, api_key,
-                )
-                if ok:
-                    success_count += 1
-                else:
-                    fail_count += 1
-            except Exception as e:
-                logger.error(f"送信失敗: user_id={user.id} - {e}")
-                _create_delivery_item(db, delivery.id, user, status=3, error_msg=str(e))
+            ok = _send_with_retry(
+                db=db,
+                delivery=delivery,
+                plan=plan,
+                user=user,
+                resolved_prompt=resolved_prompt,
+                document_key=None,
+                summary_setting=summary_setting,
+                api_key=api_key,
+            )
+            if ok:
+                success_count += 1
+            else:
                 fail_count += 1
 
             time.sleep(throttle_seconds)
@@ -263,87 +264,13 @@ def _get_target_users(db: Session, plan_id: int, target_user_id: int = None) -> 
     return q.all()
 
 
-def _send_to_user(
-    db: Session,
-    delivery: Delivery,
-    plan: Plan,
-    user: User,
-    questions: list,
-    gpt_result: dict,
-    document_key: str,
-    summary_setting,
-    api_key: str,
-) -> bool:
-    """1ユーザーにメール送信"""
-    subject = gpt_result["subject"]
-    body = gpt_result["body"]
-
-    # batch送信時: name等のユーザー個別変数を置換
-    body = resolve_variables(
-        text=body,
-        user_name=f"{user.name_last} {user.name_first}",
-        name_last=user.name_last,
-        name_first=user.name_first,
-    )
-    subject = resolve_variables(
-        text=subject,
-        user_name=f"{user.name_last} {user.name_first}",
-        name_last=user.name_last,
-        name_first=user.name_first,
-    )
-
-    # 配信停止URL
-    unsubscribe_url = None
-    if user.unsubscribe_token:
-        unsubscribe_url = f"{settings.SITE_URL}/api/me/unsubscribe?token={user.unsubscribe_token}"
-
-    try:
-        result = send_email(
-            to_email=user.email,
-            subject=subject,
-            body=body,
-            unsubscribe_url=unsubscribe_url,
-            api_key=api_key,
-        )
-
-        # 件名をDeliveryに保存 (初回のみ)
-        if not delivery.subject:
-            delivery.subject = subject
-
-        _create_delivery_item(
-            db, delivery.id, user,
-            document_key=document_key,
-            status=2,
-            resend_message_id=result.get("id"),
-        )
-
-        # あらすじ生成
-        if summary_setting:
-            generate_and_save_summary(
-                db, plan.id, user.id, body, summary_setting,
-                model=plan.model, api_key=api_key,
-            )
-
-        return True
-
-    except Exception as e:
-        error_msg = str(e)
-        _create_delivery_item(
-            db, delivery.id, user,
-            document_key=document_key,
-            status=3,
-            error_msg=error_msg,
-        )
-        _log_event(db, "ERROR", "send_failed", plan.id, user.id, user.member_no, delivery.id, error_msg)
-        return False
-
-
 def _create_delivery_item(
     db: Session,
     delivery_id: int,
     user: User,
     document_key: str = None,
     status: int = 0,
+    retry_count: int = 0,
     resend_message_id: str = None,
     error_msg: str = None,
 ):
@@ -354,6 +281,7 @@ def _create_delivery_item(
         member_no_snapshot=user.member_no,
         document_key=document_key,
         status=status,
+        retry_count=retry_count,
         resend_message_id=resend_message_id,
         last_error_message=error_msg,
         sent_at=datetime.now(JST) if status == 2 else None,
@@ -435,3 +363,320 @@ def _get_firebase_credential(db: Session, external_setting: PlanExternalDataSett
     if external_setting.firebase_key_json_enc:
         return external_setting.firebase_key_json_enc
     return None
+
+
+# =========================================================
+# リトライ付き送信関数
+# =========================================================
+
+def _send_with_retry(
+    db: Session,
+    delivery: Delivery,
+    plan: Plan,
+    user: User,
+    resolved_prompt: str,
+    document_key: str,
+    summary_setting,
+    api_key: str,
+) -> bool:
+    """GPT生成 + メール送信をリトライ付きで実行（通常モード・ハイブリッドモード用）"""
+    from app.services.report_service import send_error_alert
+
+    last_error = None
+
+    for attempt in range(MAX_RETRY + 1):
+        try:
+            gpt_result = generate_email_content(
+                prompt=resolved_prompt,
+                model=plan.model,
+                system_prompt=plan.system_prompt,
+                api_key=api_key,
+            )
+
+            # メール送信
+            ok, error_msg = _try_send_email(
+                db, delivery, plan, user,
+                gpt_result, document_key, summary_setting, api_key,
+            )
+            if ok:
+                # 成功: delivery_item作成
+                _create_delivery_item(
+                    db, delivery.id, user,
+                    document_key=document_key,
+                    status=2,
+                    retry_count=attempt,
+                )
+                return True
+
+            last_error = error_msg
+
+        except Exception as e:
+            last_error = str(e)
+
+        # リトライ
+        if attempt < MAX_RETRY:
+            logger.warning(f"送信リトライ {attempt + 1}/{MAX_RETRY}: user_id={user.id} - {last_error}")
+            time.sleep(2 ** attempt)  # 1, 2, 4秒
+
+    # 全リトライ失敗
+    logger.error(f"送信失敗 (リトライ上限): user_id={user.id} - {last_error}")
+    _create_delivery_item(
+        db, delivery.id, user,
+        document_key=document_key,
+        status=3,
+        retry_count=MAX_RETRY,
+        error_msg=last_error,
+    )
+    _log_event(db, "ERROR", "send_failed_after_retry", plan.id, user.id, user.member_no, delivery.id, last_error)
+
+    # エラー通知
+    try:
+        send_error_alert(
+            plan_id=plan.id,
+            plan_name=plan.name,
+            error_message=f"リトライ上限到達 ({MAX_RETRY}回): {last_error}",
+            details={
+                "user_id": user.id,
+                "member_no": user.member_no,
+                "email": user.email,
+            }
+        )
+    except Exception as alert_err:
+        logger.error(f"エラー通知送信失敗: {alert_err}")
+
+    return False
+
+
+def _send_email_with_retry(
+    db: Session,
+    delivery: Delivery,
+    plan: Plan,
+    user: User,
+    gpt_result: dict,
+    document_key: str,
+    summary_setting,
+    api_key: str,
+) -> bool:
+    """メール送信のみリトライ付きで実行（バッチモード用、GPT結果は事前生成済み）"""
+    from app.services.report_service import send_error_alert
+
+    last_error = None
+
+    for attempt in range(MAX_RETRY + 1):
+        ok, error_msg = _try_send_email(
+            db, delivery, plan, user,
+            gpt_result, document_key, summary_setting, api_key,
+        )
+        if ok:
+            _create_delivery_item(
+                db, delivery.id, user,
+                document_key=document_key,
+                status=2,
+                retry_count=attempt,
+            )
+            return True
+
+        last_error = error_msg
+
+        if attempt < MAX_RETRY:
+            logger.warning(f"メール送信リトライ {attempt + 1}/{MAX_RETRY}: user_id={user.id} - {last_error}")
+            time.sleep(2 ** attempt)
+
+    # 全リトライ失敗
+    logger.error(f"メール送信失敗 (リトライ上限): user_id={user.id} - {last_error}")
+    _create_delivery_item(
+        db, delivery.id, user,
+        document_key=document_key,
+        status=3,
+        retry_count=MAX_RETRY,
+        error_msg=last_error,
+    )
+    _log_event(db, "ERROR", "send_failed_after_retry", plan.id, user.id, user.member_no, delivery.id, last_error)
+
+    try:
+        send_error_alert(
+            plan_id=plan.id,
+            plan_name=plan.name,
+            error_message=f"リトライ上限到達 ({MAX_RETRY}回): {last_error}",
+            details={
+                "user_id": user.id,
+                "member_no": user.member_no,
+                "email": user.email,
+            }
+        )
+    except Exception as alert_err:
+        logger.error(f"エラー通知送信失敗: {alert_err}")
+
+    return False
+
+
+def _try_send_email(
+    db: Session,
+    delivery: Delivery,
+    plan: Plan,
+    user: User,
+    gpt_result: dict,
+    document_key: str,
+    summary_setting,
+    api_key: str,
+) -> tuple[bool, str]:
+    """メール送信を試行（delivery_item作成なし）。戻り値: (成功, エラーメッセージ)"""
+    subject = gpt_result["subject"]
+    body = gpt_result["body"]
+
+    # ユーザー個別変数を置換
+    body = resolve_variables(
+        text=body,
+        user_name=f"{user.name_last} {user.name_first}",
+        name_last=user.name_last,
+        name_first=user.name_first,
+    )
+    subject = resolve_variables(
+        text=subject,
+        user_name=f"{user.name_last} {user.name_first}",
+        name_last=user.name_last,
+        name_first=user.name_first,
+    )
+
+    # 配信停止URL
+    unsubscribe_url = None
+    if user.unsubscribe_token:
+        unsubscribe_url = f"{settings.SITE_URL}/api/me/unsubscribe?token={user.unsubscribe_token}"
+
+    try:
+        result = send_email(
+            to_email=user.email,
+            subject=subject,
+            body=body,
+            unsubscribe_url=unsubscribe_url,
+            api_key=api_key,
+        )
+
+        # 件名をDeliveryに保存 (初回のみ)
+        if not delivery.subject:
+            delivery.subject = subject
+            db.commit()
+
+        # あらすじ生成
+        if summary_setting:
+            generate_and_save_summary(
+                db, plan.id, user.id, body, summary_setting,
+                model=plan.model, api_key=api_key,
+            )
+
+        return True, ""
+
+    except Exception as e:
+        return False, str(e)
+
+
+# =========================================================
+# 失敗分再送機能
+# =========================================================
+
+def retry_failed_delivery(db: Session, delivery_id: int, api_key: str = None) -> dict:
+    """失敗したdelivery_itemのユーザーにのみ再送"""
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id).first()
+    if not delivery:
+        return {"error": "Delivery not found"}
+
+    plan = db.query(Plan).filter(Plan.id == delivery.plan_id).first()
+    if not plan:
+        return {"error": "Plan not found"}
+
+    # 失敗したdelivery_items取得
+    failed_items = db.query(DeliveryItem).filter(
+        DeliveryItem.delivery_id == delivery_id,
+        DeliveryItem.status == 3,
+    ).all()
+
+    if not failed_items:
+        return {"message": "No failed items to retry", "retried": 0, "success": 0, "failed": 0}
+
+    # 質問定義・外部データ・サマリー設定を取得
+    questions = db.query(PlanQuestion).filter(PlanQuestion.plan_id == plan.id).order_by(PlanQuestion.sort_order).all()
+
+    external_setting = db.query(PlanExternalDataSetting).filter(
+        PlanExternalDataSetting.plan_id == plan.id
+    ).first()
+
+    external_data_str = ""
+    if external_setting:
+        firebase_key_enc = _get_firebase_credential(db, external_setting)
+        if firebase_key_enc:
+            external_data_str, _ = load_external_data(
+                external_setting.external_data_path,
+                firebase_key_enc,
+            )
+
+    summary_setting = get_summary_setting(db, plan.id)
+
+    success_count = 0
+    fail_count = 0
+
+    for item in failed_items:
+        user = db.query(User).filter(User.id == item.user_id).first()
+        if not user:
+            continue
+
+        # ユーザーが配信対象かチェック
+        if not user.is_active or not user.deliverable or not user.email_verified:
+            continue
+
+        # プロンプト生成
+        user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
+        answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
+
+        user_prompt = plan.prompt
+        if summary_setting:
+            summaries = get_recent_summaries(
+                db, plan.id, user.id, summary_setting.summary_inject_count
+            )
+            user_prompt = inject_summaries_into_prompt(user_prompt, summaries)
+
+        resolved_prompt = resolve_variables(
+            text=user_prompt,
+            external_data=external_data_str or None,
+            answers=answers_dict,
+            user_name=f"{user.name_last} {user.name_first}",
+            name_last=user.name_last,
+            name_first=user.name_first,
+        )
+
+        # リトライ送信
+        ok = _send_with_retry(
+            db=db,
+            delivery=delivery,
+            plan=plan,
+            user=user,
+            resolved_prompt=resolved_prompt,
+            document_key=item.document_key,
+            summary_setting=summary_setting,
+            api_key=api_key,
+        )
+
+        if ok:
+            # 元のfailed itemを削除（新しいitemが作成されている）
+            db.delete(item)
+            db.commit()
+            success_count += 1
+        else:
+            fail_count += 1
+
+        time.sleep(5)  # スロットリング
+
+    # delivery統計を更新
+    delivery.success_count = (delivery.success_count or 0) + success_count
+    delivery.fail_count = max(0, (delivery.fail_count or 0) - success_count)
+    if delivery.fail_count == 0:
+        delivery.status = "success"
+    elif delivery.success_count > 0:
+        delivery.status = "partial_failed"
+    db.commit()
+
+    return {
+        "message": "Retry completed",
+        "retried": len(failed_items),
+        "success": success_count,
+        "failed": fail_count,
+    }
