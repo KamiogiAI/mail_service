@@ -119,8 +119,13 @@ def create_coupon(
     discount_value: int,
     duration: str = "forever",
     name: str = "",
+    applies_to_products: list[str] = None,
 ) -> str:
-    """Stripe Coupon 作成"""
+    """Stripe Coupon 作成
+    
+    Args:
+        applies_to_products: 対象プロダクトIDのリスト (指定すると対象外プロダクトにはクーポン適用不可)
+    """
     _init_stripe()
     params = {"duration": duration, "name": name or f"Discount {discount_value}"}
     if discount_type == "percent_off":
@@ -128,6 +133,11 @@ def create_coupon(
     else:
         params["amount_off"] = discount_value
         params["currency"] = "jpy"
+    
+    # 対象プロダクト制限
+    if applies_to_products:
+        params["applies_to"] = {"products": applies_to_products}
+    
     coupon = stripe.Coupon.create(**params)
     return coupon.id
 

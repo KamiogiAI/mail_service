@@ -8,6 +8,7 @@ import time as time_mod
 
 from app.core.database import get_db
 from app.models.promotion_code import PromotionCode
+from app.models.plan import Plan
 from app.services import stripe_service
 from app.routers.deps import require_admin
 
@@ -85,12 +86,24 @@ async def create_promotion(
     if existing:
         raise HTTPException(status_code=400, detail="このコードは既に存在します")
 
+    # eligible_plan_idsからStripeプロダクトIDを取得
+    applies_to_products = None
+    if data.eligible_plan_ids:
+        plans = db.query(Plan).filter(Plan.id.in_(data.eligible_plan_ids)).all()
+        applies_to_products = [p.stripe_product_id for p in plans if p.stripe_product_id]
+        if not applies_to_products:
+            raise HTTPException(
+                status_code=400,
+                detail="指定されたプランにStripeプロダクトが設定されていません"
+            )
+
     # Stripe Coupon作成
     try:
         coupon_id = stripe_service.create_coupon(
             discount_type=data.discount_type,
             discount_value=data.discount_value,
             name=f"Promo: {data.code}",
+            applies_to_products=applies_to_products,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stripe Coupon作成エラー: {e}")
