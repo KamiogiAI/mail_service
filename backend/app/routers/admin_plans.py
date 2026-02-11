@@ -285,29 +285,53 @@ async def update_questions(
     db: Session = Depends(get_db),
     _=Depends(require_admin),
 ):
-    """質問項目一括更新 (既存削除→再作成)"""
+    """質問項目一括更新 (var_nameで既存回答を保持)"""
     plan = db.query(Plan).filter(Plan.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="プランが見つかりません")
 
-    # 既存削除
-    db.query(PlanQuestion).filter(PlanQuestion.plan_id == plan_id).delete()
+    # 既存の質問をvar_name→PlanQuestionでマップ
+    existing_questions = db.query(PlanQuestion).filter(
+        PlanQuestion.plan_id == plan_id
+    ).all()
+    existing_map = {pq.var_name: pq for pq in existing_questions}
 
-    # 新規作成
+    # 新しいvar_nameのセット
+    new_var_names = {q.var_name for q in questions}
+
+    # 更新または新規作成
     for i, q in enumerate(questions):
-        pq = PlanQuestion(
-            plan_id=plan_id,
-            var_name=q.var_name,
-            label=q.label,
-            question_type=q.question_type,
-            options=q.options,
-            array_max=q.array_max,
-            array_min=q.array_min,
-            is_required=q.is_required,
-            track_changes=q.track_changes,
-            sort_order=q.sort_order if q.sort_order else i,
-        )
-        db.add(pq)
+        if q.var_name in existing_map:
+            # 既存質問を更新 (question_idは維持 → 回答も保持される)
+            pq = existing_map[q.var_name]
+            pq.label = q.label
+            pq.question_type = q.question_type
+            pq.options = q.options
+            pq.array_max = q.array_max
+            pq.array_min = q.array_min
+            pq.is_required = q.is_required
+            pq.track_changes = q.track_changes
+            pq.sort_order = q.sort_order if q.sort_order else i
+        else:
+            # 新規作成
+            pq = PlanQuestion(
+                plan_id=plan_id,
+                var_name=q.var_name,
+                label=q.label,
+                question_type=q.question_type,
+                options=q.options,
+                array_max=q.array_max,
+                array_min=q.array_min,
+                is_required=q.is_required,
+                track_changes=q.track_changes,
+                sort_order=q.sort_order if q.sort_order else i,
+            )
+            db.add(pq)
+
+    # 削除された質問を削除 (CASCADE DELETEで回答も消える)
+    for var_name, pq in existing_map.items():
+        if var_name not in new_var_names:
+            db.delete(pq)
 
     db.commit()
     return {"message": "質問項目を更新しました"}
