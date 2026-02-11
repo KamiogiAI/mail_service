@@ -16,7 +16,17 @@ from app.routers.deps import require_admin
 
 router = APIRouter(prefix="/api/admin/dashboard", tags=["admin-dashboard"])
 JST = ZoneInfo("Asia/Tokyo")
+UTC = ZoneInfo("UTC")
 ACTIVE_STATUSES = ("trialing", "active", "past_due", "admin_added")
+
+
+def _to_jst_iso(dt: datetime) -> str:
+    """DateTimeをJSTに変換してISO形式で返す"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(JST).isoformat()
 
 
 @router.get("")
@@ -104,7 +114,7 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
             "success": d.success_count,
             "fail": d.fail_count,
             "status": d.status,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "created_at": _to_jst_iso(d.created_at),
         }
         for d, pname in recent_deliveries
     ]
@@ -123,7 +133,7 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
             "member_no": u.member_no,
             "name": f"{u.name_last} {u.name_first}",
             "email": u.email,
-            "created_at": u.created_at.isoformat() if u.created_at else None,
+            "created_at": _to_jst_iso(u.created_at),
         }
         for u in recent_users
     ]
