@@ -126,14 +126,28 @@ const ManualSendPage = {
                 btn.disabled = false;
                 return;
             }
-            resultEl.innerHTML = '<p>送信中... (全ユーザーへの送信には時間がかかります)</p>';
+            resultEl.innerHTML = '<p>送信開始中...</p>';
             try {
                 const res = await API.post('/api/admin/manual-send/plan', {
                     plan_id: planId,
                     subject: subject,
                     body: body,
                 });
-                resultEl.innerHTML = `<p class="success-message">${res.message} (成功: ${res.success_count}, 失敗: ${res.fail_count})</p>`;
+                
+                if (res.status === 'running' && res.delivery_id) {
+                    // バックグラウンド実行中 → 進捗をポーリング
+                    resultEl.innerHTML = `
+                        <p>送信中... (${res.total_count}件)</p>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="ms-progress-bar" style="width: 0%"></div>
+                        </div>
+                        <p id="ms-progress-text">0 / ${res.total_count}</p>
+                    `;
+                    this.pollDeliveryProgress(res.delivery_id, res.total_count, resultEl, btn);
+                    return; // ボタンはポーリング完了後に有効化
+                } else {
+                    resultEl.innerHTML = `<p class="success-message">${res.message}</p>`;
+                }
             } catch (e) {
                 resultEl.innerHTML = `<p class="error-message">${e.message}</p>`;
             }
@@ -208,5 +222,53 @@ const ManualSendPage = {
     removeUser(index) {
         this.selectedUsers.splice(index, 1);
         this.renderTags();
+    },
+
+    async pollDeliveryProgress(deliveryId, totalCount, resultEl, btn) {
+        const checkProgress = async () => {
+            try {
+                const deliveries = await API.get('/api/admin/deliveries?limit=10');
+                const delivery = deliveries.find(d => d.id === deliveryId);
+                
+                if (!delivery) {
+                    resultEl.innerHTML = '<p class="error-message">配信情報が見つかりません</p>';
+                    btn.disabled = false;
+                    return;
+                }
+                
+                const success = delivery.success_count || 0;
+                const fail = delivery.fail_count || 0;
+                const progress = success + fail;
+                const percent = Math.round((progress / totalCount) * 100);
+                
+                const progressBar = document.getElementById('ms-progress-bar');
+                const progressText = document.getElementById('ms-progress-text');
+                
+                if (progressBar) progressBar.style.width = `${percent}%`;
+                if (progressText) progressText.textContent = `${progress} / ${totalCount}`;
+                
+                if (delivery.status !== 'running') {
+                    // 完了
+                    if (delivery.status === 'success') {
+                        resultEl.innerHTML = `<p class="success-message">送信完了 (成功: ${success}件)</p>`;
+                    } else if (delivery.status === 'partial_failed') {
+                        resultEl.innerHTML = `<p class="error-message">送信完了 (成功: ${success}件, 失敗: ${fail}件)</p>`;
+                    } else {
+                        resultEl.innerHTML = `<p class="error-message">送信失敗</p>`;
+                    }
+                    btn.disabled = false;
+                    return;
+                }
+                
+                // まだ実行中 → 3秒後に再確認
+                setTimeout(checkProgress, 3000);
+            } catch (e) {
+                resultEl.innerHTML = `<p class="error-message">進捗確認エラー: ${e.message}</p>`;
+                btn.disabled = false;
+            }
+        };
+        
+        // 最初のチェックは2秒後
+        setTimeout(checkProgress, 2000);
     },
 };
