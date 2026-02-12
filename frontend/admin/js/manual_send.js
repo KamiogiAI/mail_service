@@ -227,8 +227,8 @@ const ManualSendPage = {
     async pollDeliveryProgress(deliveryId, totalCount, resultEl, btn) {
         const checkProgress = async () => {
             try {
-                const deliveries = await API.get('/api/admin/deliveries?limit=10');
-                const delivery = deliveries.find(d => d.id === deliveryId);
+                const response = await API.get('/api/admin/deliveries?limit=10');
+                const delivery = response.deliveries.find(d => d.id === deliveryId);
                 
                 if (!delivery) {
                     resultEl.innerHTML = '<p class="error-message">配信情報が見つかりません</p>';
