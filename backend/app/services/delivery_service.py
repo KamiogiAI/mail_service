@@ -94,12 +94,13 @@ def execute_plan_delivery(
     db.commit()
     db.refresh(delivery)
 
-    # ProgressPlanにdelivery_idを即座に設定（進捗表示のため）
+    # ProgressPlanにdelivery_idとstatusを即座に設定（進捗表示のため）
     if progress_id:
         from app.models.progress_plan import ProgressPlan
         progress = db.query(ProgressPlan).filter(ProgressPlan.id == progress_id).first()
         if progress:
             progress.delivery_id = delivery.id
+            progress.status = 1  # 実行中
             db.commit()
 
     prompt = prompt_override or plan.prompt
