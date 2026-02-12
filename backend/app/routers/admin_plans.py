@@ -85,9 +85,11 @@ async def list_plans(db: Session = Depends(get_db), _=Depends(require_admin)):
     result = []
     for p in plans:
         from app.models.subscription import Subscription
-        sub_count = db.query(Subscription).filter(
+        from app.models.user import User
+        sub_count = db.query(Subscription).join(User, Subscription.user_id == User.id).filter(
             Subscription.plan_id == p.id,
             Subscription.status.in_(["trialing", "active", "admin_added"]),
+            User.is_active == True,
         ).count()
         result.append({
             "id": p.id,

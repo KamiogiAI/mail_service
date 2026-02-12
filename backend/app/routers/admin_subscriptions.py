@@ -26,10 +26,11 @@ async def list_subscriptions(db: Session = Depends(get_db), _=Depends(require_ad
     for plan in plans:
         subs = (
             db.query(Subscription, User)
-            .join(User, Subscription.user_id == User.id, isouter=True)
+            .join(User, Subscription.user_id == User.id)
             .filter(
                 Subscription.plan_id == plan.id,
                 Subscription.status.in_(ACTIVE_STATUSES),
+                User.is_active == True,
             )
             .order_by(Subscription.created_at.desc())
             .all()
