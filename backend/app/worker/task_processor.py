@@ -53,6 +53,7 @@ def process_pending_tasks():
                 plan=plan,
                 send_type=progress.send_type,
                 throttle_seconds=throttle,
+                progress_id=progress.id,
             )
 
             if delivery:

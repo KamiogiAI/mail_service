@@ -40,6 +40,7 @@ def execute_plan_delivery(
     throttle_seconds: int = 5,
     target_user_id: int = None,
     api_key: str = None,
+    progress_id: int = None,
 ) -> Delivery:
     """
     プランの配信を実行する。
@@ -92,6 +93,14 @@ def execute_plan_delivery(
     db.add(delivery)
     db.commit()
     db.refresh(delivery)
+
+    # ProgressPlanにdelivery_idを即座に設定（進捗表示のため）
+    if progress_id:
+        from app.models.progress_plan import ProgressPlan
+        progress = db.query(ProgressPlan).filter(ProgressPlan.id == progress_id).first()
+        if progress:
+            progress.delivery_id = delivery.id
+            db.commit()
 
     prompt = prompt_override or plan.prompt
     summary_setting = get_summary_setting(db, plan.id)
