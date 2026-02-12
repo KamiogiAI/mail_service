@@ -11,6 +11,7 @@ const ProgressPage = {
         failed: ['badge-danger', '失敗'],
         stopped: ['badge-inactive', '停止'],
     },
+    manualSendPollingTimer: null,
 
     async render(container) {
         const today = new Date().toISOString().split('T')[0];
@@ -25,6 +26,7 @@ const ProgressPage = {
             <div id="progress-dashboard" class="card" style="margin-bottom:20px;">
                 <div class="progress-dashboard">読み込み中...</div>
             </div>
+            <div id="manual-send-progress" style="display:none;margin-bottom:20px;"></div>
             <div class="card" style="margin-bottom:20px;">
                 <div class="card-header">
                     <h2>本日の進捗</h2>
@@ -75,6 +77,7 @@ const ProgressPage = {
             this.loadDashboard(),
             this.loadProgress(),
             this.loadRecentDeliveries(),
+            this.loadManualSendProgress(),
         ]);
     },
 
@@ -274,6 +277,151 @@ const ProgressPage = {
             `;
         } catch (e) {
             el.innerHTML = `<p class="error-message">${e.message}</p>`;
+        }
+    },
+
+    // --- 実行中の手動送信進捗 ---
+    async loadManualSendProgress() {
+        const container = document.getElementById('manual-send-progress');
+        if (!container) return;
+
+        try {
+            const response = await API.get('/api/admin/deliveries?limit=5');
+            const runningManual = response.deliveries.filter(d => d.send_type === 'manual' && d.status === 'running');
+
+            if (runningManual.length === 0) {
+                container.style.display = 'none';
+                if (this.manualSendPollingTimer) {
+                    clearInterval(this.manualSendPollingTimer);
+                    this.manualSendPollingTimer = null;
+                }
+                return;
+            }
+
+            container.style.display = 'block';
+            let html = '';
+
+            for (const d of runningManual) {
+                const total = d.total_count || 0;
+                const success = d.success_count || 0;
+                const fail = d.fail_count || 0;
+                const progress = success + fail;
+                const percent = total > 0 ? Math.round((progress / total) * 100) : 0;
+
+                html += `
+                    <div class="card" style="border-left:4px solid #e6a800;">
+                        <div class="card-header">
+                            <h2>📤 手動送信 実行中</h2>
+                            <span class="badge badge-warning badge-pulse">実行中</span>
+                        </div>
+                        <div style="padding:15px;">
+                            <div style="margin-bottom:10px;">
+                                <strong>件名:</strong> ${this.esc(d.subject || '-')}
+                            </div>
+                            <div style="margin-bottom:15px;">
+                                <div style="display:flex;align-items:center;gap:10px;">
+                                    <div style="flex:1;">
+                                        <div class="progress-bar-wrap" style="height:20px;">
+                                            <div class="progress-bar-fill" style="width:${percent}%;height:100%;"></div>
+                                        </div>
+                                    </div>
+                                    <span style="font-weight:600;white-space:nowrap;">${progress} / ${total} (${percent}%)</span>
+                                </div>
+                                <div style="margin-top:8px;font-size:13px;">
+                                    <span style="color:#28a745;">✓ 成功: ${success}</span>
+                                    ${fail > 0 ? `<span style="color:#dc3545;margin-left:15px;">✗ 失敗: ${fail}</span>` : ''}
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-secondary" onclick="ProgressPage.showManualSendDetail(${d.id})">送信先詳細</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+
+            // ポーリング開始（まだ開始していない場合）
+            if (!this.manualSendPollingTimer) {
+                this.manualSendPollingTimer = setInterval(() => {
+                    this.loadManualSendProgress();
+                    this.loadDashboard();
+                }, 3000);
+            }
+        } catch (e) {
+            console.error('Manual send progress error:', e);
+        }
+    },
+
+    // --- 手動送信詳細モーダル ---
+    async showManualSendDetail(deliveryId) {
+        const modal = document.getElementById('progress-detail-modal');
+        const body = document.getElementById('progress-detail-body');
+        modal.classList.add('active');
+        body.innerHTML = '<p>読み込み中...</p>';
+
+        try {
+            const data = await API.get(`/api/admin/deliveries/${deliveryId}/items`);
+            document.getElementById('progress-detail-title').textContent = '手動送信 - 送信先詳細';
+
+            const d = data.delivery;
+            const total = d.total_count || 0;
+            const success = d.success_count || 0;
+            const fail = d.fail_count || 0;
+            const percent = total > 0 ? Math.round(((success + fail) / total) * 100) : 0;
+
+            let html = `
+                <div style="margin-bottom:20px;">
+                    <div class="subs-summary" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr));">
+                        <div class="subs-summary-item">
+                            <div class="subs-summary-label">ステータス</div>
+                            <div style="margin-top:4px;"><span class="badge ${d.status === 'running' ? 'badge-warning badge-pulse' : 'badge-active'}">${d.status === 'running' ? '実行中' : '完了'}</span></div>
+                        </div>
+                        <div class="subs-summary-item">
+                            <div class="subs-summary-label">進捗</div>
+                            <div class="subs-summary-value" style="font-size:18px;">${percent}%</div>
+                        </div>
+                        <div class="subs-summary-item">
+                            <div class="subs-summary-label">総数</div>
+                            <div class="subs-summary-value" style="font-size:18px;">${total}</div>
+                        </div>
+                        <div class="subs-summary-item">
+                            <div class="subs-summary-label">成功</div>
+                            <div class="subs-summary-value" style="font-size:18px;color:#28a745;">${success}</div>
+                        </div>
+                        <div class="subs-summary-item">
+                            <div class="subs-summary-label">失敗</div>
+                            <div class="subs-summary-value" style="font-size:18px;color:${fail > 0 ? '#dc3545' : '#000'};">${fail}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            if (data.items && data.items.length > 0) {
+                const itemStatusMap = { 0: ['badge-inactive', '待機'], 1: ['badge-warning', '実行中'], 2: ['badge-active', '成功'], 3: ['badge-danger', '失敗'] };
+                html += `
+                    <div class="table-container"><table>
+                        <thead><tr><th>会員番号</th><th>名前</th><th>メール</th><th>ステータス</th><th>送信日時</th></tr></thead>
+                        <tbody>${data.items.map(item => {
+                            const [iClass, iLabel] = itemStatusMap[item.status] || ['badge-inactive', '不明'];
+                            return `
+                                <tr>
+                                    <td>${this.esc(item.member_no)}</td>
+                                    <td>${this.esc(item.user_name)}</td>
+                                    <td>${this.esc(item.email)}</td>
+                                    <td><span class="badge ${iClass}">${iLabel}</span></td>
+                                    <td>${item.sent_at ? new Date(item.sent_at).toLocaleString('ja-JP') : '-'}</td>
+                                </tr>
+                            `;
+                        }).join('')}</tbody>
+                    </table></div>
+                `;
+            } else {
+                html += '<p style="color:#999;">送信先がありません</p>';
+            }
+
+            body.innerHTML = html;
+        } catch (e) {
+            body.innerHTML = `<p class="error-message">${e.message}</p>`;
         }
     },
 

@@ -81,6 +81,51 @@ async def list_deliveries(
     return {"total": total, "deliveries": result}
 
 
+@router.get("/{delivery_id}/items")
+async def get_delivery_items(delivery_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """配信アイテム一覧（手動送信の詳細表示用）"""
+    from app.models.delivery_item import DeliveryItem
+    from app.models.user import User
+
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="配信履歴が見つかりません")
+
+    items = db.query(DeliveryItem).filter(DeliveryItem.delivery_id == delivery_id).order_by(DeliveryItem.id).all()
+
+    result_items = []
+    for item in items:
+        user = db.query(User).filter(User.id == item.user_id).first()
+        result_items.append({
+            "id": item.id,
+            "user_id": item.user_id,
+            "member_no": item.member_no_snapshot or (user.member_no if user else "-"),
+            "user_name": f"{user.name_last} {user.name_first}" if user else "(退会済)",
+            "email": user.email if user else "-",
+            "status": item.status,
+            "sent_at": _jst_iso(item.sent_at),
+            "error_message": item.last_error_message,
+        })
+
+    plan = db.query(Plan).filter(Plan.id == delivery.plan_id).first() if delivery.plan_id else None
+
+    return {
+        "delivery": {
+            "id": delivery.id,
+            "plan_name": plan.name if plan else "(手動送信)",
+            "send_type": delivery.send_type,
+            "status": delivery.status,
+            "subject": delivery.subject,
+            "total_count": delivery.total_count,
+            "success_count": delivery.success_count,
+            "fail_count": delivery.fail_count,
+            "started_at": _jst_iso(delivery.started_at),
+            "completed_at": _jst_iso(delivery.completed_at),
+        },
+        "items": result_items,
+    }
+
+
 @router.delete("/{delivery_id}")
 async def delete_delivery(delivery_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
     """配信履歴削除"""
