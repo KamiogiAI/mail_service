@@ -159,6 +159,7 @@ def _background_send_plan(delivery_id: int, user_ids: list[int], subject: str, b
                 )
                 db.add(item)
                 success_count += 1
+                delivery.success_count = success_count  # 1件ごとに更新
                 logger.info(f"手動送信成功: user_id={user.id}, email={user.email}")
             except Exception as e:
                 item = DeliveryItem(
@@ -170,6 +171,7 @@ def _background_send_plan(delivery_id: int, user_ids: list[int], subject: str, b
                 )
                 db.add(item)
                 fail_count += 1
+                delivery.fail_count = fail_count  # 1件ごとに更新
                 logger.error(f"手動送信失敗: user_id={user.id} - {e}")
 
             db.commit()
