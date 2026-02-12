@@ -22,20 +22,26 @@ def send_email(
     from_email: str = None,
     unsubscribe_url: str = None,
     api_key: str = None,
+    is_html: bool = False,
 ) -> dict:
     """
     HTMLメールをResend APIで送信。
+    is_html=True の場合、bodyをそのままHTMLとして送信。
     Returns: {"id": "resend_message_id"} or raises
     """
     resend.api_key = api_key or get_resend_api_key()
 
-    # HTMLテンプレートでラップ
-    template = jinja_env.get_template("email_base.html")
-    html = template.render(
-        body=body,
-        unsubscribe_url=unsubscribe_url,
-        site_name=get_site_name(),
-    )
+    if is_html:
+        # 既にHTML形式の場合はそのまま送信
+        html = body
+    else:
+        # HTMLテンプレートでラップ
+        template = jinja_env.get_template("email_base.html")
+        html = template.render(
+            body=body,
+            unsubscribe_url=unsubscribe_url,
+            site_name=get_site_name(),
+        )
 
     result = resend.Emails.send({
         "from": from_email or get_from_email(),
