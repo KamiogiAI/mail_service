@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from app.core.database import get_db
 from app.core.redis import get_redis
@@ -322,6 +323,13 @@ async def get_answer_history(
         .all()
     )
 
+    def to_jst_iso(dt):
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+        return dt.astimezone(ZoneInfo("Asia/Tokyo")).isoformat()
+
     return [
         {
             "id": h.id,
@@ -329,7 +337,7 @@ async def get_answer_history(
             "label": label_map.get(h.question_id) or var_label_map.get(h.var_name) or h.var_name,
             "old_value": h.old_value,
             "new_value": h.new_value,
-            "changed_at": h.changed_at.isoformat() if h.changed_at else None,
+            "changed_at": to_jst_iso(h.changed_at),
         }
         for h in histories
     ]
