@@ -4,8 +4,10 @@
 const ManualSendPage = {
     plans: [],
     mode: 'user', // 'user' or 'plan'
+    selectedUsers: [], // [{id, member_no, name, email}]
 
     async render(container) {
+        this.selectedUsers = [];
         container.innerHTML = `
             <div class="content-header"><h1>手動送信</h1></div>
             <div class="card">
@@ -15,7 +17,14 @@ const ManualSendPage = {
                 </div>
 
                 <div id="ms-mode-user" class="tab-content active">
-                    <div class="form-group"><label>ユーザーID</label><input id="ms-user-id" type="number" placeholder="ユーザーIDを入力"></div>
+                    <div class="form-group">
+                        <label>ユーザー選択 <small>(ID or 会員番号を入力してスペースで確定)</small></label>
+                        <div class="tag-input-container" id="ms-tag-container">
+                            <div id="ms-selected-tags"></div>
+                            <input id="ms-user-input" type="text" placeholder="ID or 会員番号を入力..." 
+                                   onkeydown="ManualSendPage.handleKeyDown(event)">
+                        </div>
+                    </div>
                 </div>
 
                 <div id="ms-mode-plan" class="tab-content">
@@ -75,22 +84,36 @@ const ManualSendPage = {
         btn.disabled = true;
 
         if (this.mode === 'user') {
-            const userId = parseInt(document.getElementById('ms-user-id').value);
-            if (!userId) {
-                resultEl.innerHTML = '<p class="error-message">ユーザーIDを入力してください</p>';
+            if (this.selectedUsers.length === 0) {
+                resultEl.innerHTML = '<p class="error-message">送信先ユーザーを選択してください</p>';
                 btn.disabled = false;
                 return;
             }
-            resultEl.innerHTML = '<p>送信中...</p>';
-            try {
-                const res = await API.post('/api/admin/manual-send/user', {
-                    user_id: userId,
-                    subject: subject,
-                    body: body,
-                });
-                resultEl.innerHTML = `<p class="success-message">${res.message}</p>`;
-            } catch (e) {
-                resultEl.innerHTML = `<p class="error-message">${e.message}</p>`;
+            resultEl.innerHTML = `<p>送信中... (${this.selectedUsers.length}人)</p>`;
+            let successCount = 0;
+            let failCount = 0;
+            const errors = [];
+            
+            for (const user of this.selectedUsers) {
+                try {
+                    await API.post('/api/admin/manual-send/user', {
+                        user_id: user.id,
+                        subject: subject,
+                        body: body,
+                    });
+                    successCount++;
+                } catch (e) {
+                    failCount++;
+                    errors.push(`${user.name}: ${e.message}`);
+                }
+            }
+            
+            if (failCount === 0) {
+                resultEl.innerHTML = `<p class="success-message">送信完了 (${successCount}人)</p>`;
+                this.selectedUsers = [];
+                this.renderTags();
+            } else {
+                resultEl.innerHTML = `<p class="error-message">成功: ${successCount}人, 失敗: ${failCount}人<br>${errors.join('<br>')}</p>`;
             }
         } else {
             const planId = parseInt(document.getElementById('ms-plan-id').value);
@@ -123,5 +146,67 @@ const ManualSendPage = {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    },
+
+    async handleKeyDown(event) {
+        if (event.key !== ' ' && event.key !== 'Enter') return;
+        
+        const input = document.getElementById('ms-user-input');
+        const value = input.value.trim();
+        if (!value) return;
+        
+        event.preventDefault();
+        input.disabled = true;
+        
+        try {
+            // IDか会員番号かを判定して検索
+            const isNumeric = /^\d+$/.test(value);
+            let user = null;
+            
+            if (isNumeric && value.length <= 5) {
+                // 短い数字はuser_idとして検索
+                user = await API.get(`/api/admin/users/${value}`);
+            } else {
+                // 会員番号として検索
+                const users = await API.get(`/api/admin/users?search=${encodeURIComponent(value)}&per_page=1`);
+                if (users.users && users.users.length > 0) {
+                    user = users.users[0];
+                }
+            }
+            
+            if (user && !this.selectedUsers.find(u => u.id === user.id)) {
+                this.selectedUsers.push({
+                    id: user.id,
+                    member_no: user.member_no,
+                    name: `${user.name_last} ${user.name_first}`,
+                    email: user.email,
+                });
+                this.renderTags();
+            } else if (!user) {
+                alert('ユーザーが見つかりません: ' + value);
+            }
+        } catch (e) {
+            alert('ユーザー検索エラー: ' + e.message);
+        }
+        
+        input.value = '';
+        input.disabled = false;
+        input.focus();
+    },
+
+    renderTags() {
+        const container = document.getElementById('ms-selected-tags');
+        container.innerHTML = this.selectedUsers.map((u, i) => `
+            <span class="user-tag">
+                <span class="tag-name">${this.esc(u.name)}</span>
+                <span class="tag-id">(${this.esc(u.member_no)})</span>
+                <button type="button" class="tag-remove" onclick="ManualSendPage.removeUser(${i})">&times;</button>
+            </span>
+        `).join('');
+    },
+
+    removeUser(index) {
+        this.selectedUsers.splice(index, 1);
+        this.renderTags();
     },
 };

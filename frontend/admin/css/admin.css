@@ -707,3 +707,51 @@ table tr:hover { background: #f5f5f5; }
     .login-box { padding: 30px 20px; }
     .login-box h1 { font-size: 20px; }
 }
+
+/* タグ入力 */
+.tag-input-container {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: #fff;
+    min-height: 42px;
+}
+.tag-input-container input {
+    flex: 1;
+    min-width: 150px;
+    border: none;
+    outline: none;
+    padding: 4px;
+    font-size: 14px;
+}
+#ms-selected-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.user-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #e3f2fd;
+    color: #1565c0;
+    padding: 4px 8px;
+    border-radius: 16px;
+    font-size: 13px;
+}
+.tag-name { font-weight: 500; }
+.tag-id { font-size: 11px; color: #666; }
+.tag-remove {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+}
+.tag-remove:hover { color: #e53935; }
