@@ -488,6 +488,13 @@ const ProgressPage = {
                 }
             }
 
+            // 手動送信の場合のみ件名を表示
+            const subjectHtml = d.send_type === 'manual' ? `
+                        <div class="subs-summary-item">
+                            <div class="subs-summary-label">件名</div>
+                            <div class="subs-summary-value" style="font-size:12px;">${this.esc(d.subject || '-')}</div>
+                        </div>` : '';
+
             html += `
                 <div style="margin-bottom:20px;">
                     <div class="subs-summary" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr));">
@@ -495,10 +502,7 @@ const ProgressPage = {
                             <div class="subs-summary-label">ステータス</div>
                             <div style="margin-top:4px;"><span class="badge ${sClass}">${sLabel}</span></div>
                         </div>
-                        <div class="subs-summary-item">
-                            <div class="subs-summary-label">件名</div>
-                            <div class="subs-summary-value" style="font-size:12px;">${this.esc(d.subject || '-')}</div>
-                        </div>
+                        ${subjectHtml}
                         <div class="subs-summary-item">
                             <div class="subs-summary-label">総数</div>
                             <div class="subs-summary-value" style="font-size:18px;">${d.total_count}</div>

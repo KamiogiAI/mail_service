@@ -41,13 +41,12 @@ const DeliveriesPage = {
             }
             el.innerHTML = `
                 <div class="table-container"><table>
-                    <thead><tr><th>日時</th><th>プラン</th><th>タイプ</th><th>件名</th><th>送信数</th><th>成功</th><th>失敗</th><th>状態</th><th>操作</th></tr></thead>
+                    <thead><tr><th>日時</th><th>プラン</th><th>タイプ</th><th>送信数</th><th>成功</th><th>失敗</th><th>状態</th><th>操作</th></tr></thead>
                     <tbody>${data.deliveries.map(d => `
                         <tr>
                             <td>${d.created_at ? new Date(d.created_at).toLocaleString('ja-JP') : '-'}</td>
                             <td>${d.plan_name || '-'}</td>
                             <td>${d.send_type}</td>
-                            <td>${this.esc(d.subject || '-')}</td>
                             <td>${d.total_count}</td>
                             <td>${d.success_count}</td>
                             <td>${d.fail_count}</td>

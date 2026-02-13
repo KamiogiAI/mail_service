@@ -101,14 +101,13 @@ const DashboardPage = {
                         <a href="#deliveries" style="font-size:13px;">すべて見る &rarr;</a>
                     </div>
                     <div class="table-container"><table>
-                        <thead><tr><th>日時</th><th>プラン</th><th>種別</th><th>件名</th><th>結果</th></tr></thead>
+                        <thead><tr><th>日時</th><th>プラン</th><th>種別</th><th>結果</th></tr></thead>
                         <tbody>${d.recent_deliveries.map(r => {
                             const statusCls = r.status === 'success' ? 'badge-active' : (r.status === 'running' ? 'badge-warning' : 'badge-danger');
                             return `<tr>
                                 <td style="white-space:nowrap;">${this.fmtDatetime(r.created_at)}</td>
                                 <td>${this.esc(r.plan_name)}</td>
                                 <td>${TYPE_LABELS[r.send_type] || r.send_type}</td>
-                                <td>${this.esc((r.subject||'').substring(0,30))}</td>
                                 <td><span class="badge ${statusCls}">${STATUS_LABELS[r.status]||r.status}</span> ${r.success}/${r.total}</td>
                             </tr>`;
                         }).join('')}</tbody>
