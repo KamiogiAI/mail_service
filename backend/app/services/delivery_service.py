@@ -156,8 +156,11 @@ def execute_plan_delivery(
                 )
                 if ok:
                     success_count += 1
+                    delivery.success_count = success_count
                 else:
                     fail_count += 1
+                    delivery.fail_count = fail_count
+                db.commit()
 
                 time.sleep(throttle_seconds)
 
@@ -192,8 +195,11 @@ def execute_plan_delivery(
                 )
                 if ok:
                     success_count += 1
+                    delivery.success_count = success_count
                 else:
                     fail_count += 1
+                    delivery.fail_count = fail_count
+                db.commit()
                 time.sleep(throttle_seconds)
     else:
         # 通常送信: ユーザーごとにGPT生成
@@ -230,8 +236,11 @@ def execute_plan_delivery(
             )
             if ok:
                 success_count += 1
+                delivery.success_count = success_count
             else:
                 fail_count += 1
+                delivery.fail_count = fail_count
+            db.commit()
 
             time.sleep(throttle_seconds)
 
