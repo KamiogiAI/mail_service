@@ -99,9 +99,14 @@ def execute_plan_delivery(
         from app.models.progress_plan import ProgressPlan
         progress = db.query(ProgressPlan).filter(ProgressPlan.id == progress_id).first()
         if progress:
+            logger.info(f"ProgressPlan更新: id={progress_id}, delivery_id={delivery.id}, status=1")
             progress.delivery_id = delivery.id
             progress.status = 1  # 実行中
             db.commit()
+        else:
+            logger.warning(f"ProgressPlan not found: id={progress_id}")
+    else:
+        logger.debug(f"progress_id is None, skipping ProgressPlan update")
 
     prompt = prompt_override or plan.prompt
     summary_setting = get_summary_setting(db, plan.id)
