@@ -259,11 +259,23 @@ def _handle_subscription_deleted(db: Session, data: dict):
 
 
 def _handle_invoice_paid(db: Session, data: dict):
-    """invoice.paid: 請求成功 → past_due から active への復帰"""
+    """invoice.paid: 請求成功 → past_due から active への復帰 + 初回課金時にtrial_used設定"""
     subscription_id = data.get("subscription")
     if subscription_id:
         subscription_service.handle_invoice_paid(db, subscription_id)
-    logger.info(f"請求成功: subscription={subscription_id}")
+
+    # 有料課金が発生した場合、ユーザーのtrial_usedをTrueに設定
+    # (トライアルなしプランからトライアルありプランへの乗り換え防止)
+    amount_paid = data.get("amount_paid", 0)
+    customer_id = data.get("customer")
+    if amount_paid > 0 and customer_id:
+        user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
+        if user and not user.trial_used:
+            user.trial_used = True
+            db.commit()
+            logger.info(f"初回課金完了: user_id={user.id}, trial_used=True に設定")
+
+    logger.info(f"請求成功: subscription={subscription_id}, amount_paid={amount_paid}")
 
 
 def _handle_invoice_payment_failed(db: Session, data: dict):
