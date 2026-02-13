@@ -42,6 +42,7 @@ def process_pending_tasks():
 
         # 実行中に更新
         progress.status = 1
+        progress.updated_at = datetime.now(JST)
         db.commit()
 
         logger.info(f"タスク実行開始: progress_id={progress.id}, plan_id={plan.id}")
@@ -62,6 +63,7 @@ def process_pending_tasks():
             else:
                 progress.status = 2  # 対象ユーザーなし = 完了扱い
 
+            progress.updated_at = datetime.now(JST)
             db.commit()
             logger.info(f"タスク実行完了: progress_id={progress.id}")
 
@@ -73,6 +75,7 @@ def process_pending_tasks():
             progress = db.query(ProgressPlan).filter(ProgressPlan.id == progress.id).first()
             if progress:
                 progress.status = 3  # エラー
+                progress.updated_at = datetime.now(JST)
                 db.commit()
 
             # エラーアラート送信
