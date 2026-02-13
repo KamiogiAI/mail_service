@@ -82,6 +82,34 @@ def execute_plan_delivery(
     if stale:
         db.commit()
 
+    # 同日の同プランで既に送信成功したユーザーを除外（重複送信防止）
+    today = datetime.now(JST).date()
+    today_start = datetime.combine(today, datetime.min.time())
+    today_end = datetime.combine(today, datetime.max.time())
+    
+    already_sent_user_ids = set()
+    today_deliveries = db.query(Delivery).filter(
+        Delivery.plan_id == plan.id,
+        Delivery.started_at >= today_start,
+        Delivery.started_at <= today_end,
+    ).all()
+    for d in today_deliveries:
+        sent_items = db.query(DeliveryItem).filter(
+            DeliveryItem.delivery_id == d.id,
+            DeliveryItem.status == 2,  # 送信成功
+        ).all()
+        for item in sent_items:
+            already_sent_user_ids.add(item.user_id)
+    
+    if already_sent_user_ids:
+        original_count = len(users)
+        users = [u for u in users if u.id not in already_sent_user_ids]
+        logger.info(f"重複送信防止: {original_count}人 → {len(users)}人 (除外: {len(already_sent_user_ids)}人)")
+    
+    if not users:
+        logger.info(f"配信対象ユーザーなし（全員送信済み）: plan_id={plan.id}")
+        return None
+
     # Delivery レコード作成
     delivery = Delivery(
         plan_id=plan.id,
