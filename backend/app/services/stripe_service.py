@@ -89,12 +89,77 @@ def create_customer(email: str, name: str, metadata: dict = None) -> str:
     return customer.id
 
 
+def _get_or_create_portal_configuration() -> str:
+    """Billing Portal Configuration を取得または作成"""
+    _init_stripe()
+    
+    # 既存のConfigurationを取得
+    configs = stripe.billing_portal.Configuration.list(limit=1, is_default=True)
+    if configs.data:
+        config = configs.data[0]
+        # proration_behaviorが正しく設定されているか確認
+        sub_update = config.features.get("subscription_update", {})
+        if sub_update.get("proration_behavior") == "create_prorations":
+            return config.id
+        
+        # 設定が異なる場合は更新
+        try:
+            stripe.billing_portal.Configuration.modify(
+                config.id,
+                features={
+                    "subscription_update": {
+                        "enabled": True,
+                        "default_allowed_updates": ["price"],
+                        "proration_behavior": "create_prorations",
+                    },
+                    "subscription_cancel": {
+                        "enabled": True,
+                        "mode": "at_period_end",
+                    },
+                    "payment_method_update": {"enabled": True},
+                    "invoice_history": {"enabled": True},
+                },
+            )
+            logger.info(f"Billing Portal Configuration更新: {config.id}")
+            return config.id
+        except Exception as e:
+            logger.warning(f"Configuration更新失敗: {e}")
+            return config.id
+    
+    # 新規作成
+    config = stripe.billing_portal.Configuration.create(
+        features={
+            "subscription_update": {
+                "enabled": True,
+                "default_allowed_updates": ["price"],
+                "proration_behavior": "create_prorations",
+            },
+            "subscription_cancel": {
+                "enabled": True,
+                "mode": "at_period_end",
+            },
+            "payment_method_update": {"enabled": True},
+            "invoice_history": {"enabled": True},
+        },
+        business_profile={
+            "headline": "プランの管理",
+        },
+    )
+    logger.info(f"Billing Portal Configuration作成: {config.id}")
+    return config.id
+
+
 def create_billing_portal_session(customer_id: str, return_url: str) -> str:
     """Billing Portal Session を作成し URL を返す"""
     _init_stripe()
+    
+    # proration設定済みのConfigurationを使用
+    config_id = _get_or_create_portal_configuration()
+    
     session = stripe.billing_portal.Session.create(
         customer=customer_id,
         return_url=return_url,
+        configuration=config_id,
     )
     return session.url
 
