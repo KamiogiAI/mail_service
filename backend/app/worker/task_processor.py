@@ -152,6 +152,9 @@ def update_cursor(db, progress_id: int, cursor: str) -> bool:
 def _get_next_task(db) -> ProgressPlan:
     """
     優先順位に基づいて次のタスクを取得。
+    
+    with_for_update(skip_locked=True)で排他ロックを取得。
+    複数Workerが同時に動作しても同じタスクを取得しない。
 
     優先順位:
     1. status=3 (エラー) かつ retry_count < max_retries → リトライ対象
@@ -159,19 +162,19 @@ def _get_next_task(db) -> ProgressPlan:
     """
     today = datetime.now(JST).date()
 
-    # 1. エラー状態でリトライ可能なもの
+    # 1. エラー状態でリトライ可能なもの（排他ロック付き）
     task = db.query(ProgressPlan).filter(
         ProgressPlan.status == 3,
         ProgressPlan.date == today,
         ProgressPlan.retry_count < ProgressPlan.max_retries,
-    ).first()
+    ).with_for_update(skip_locked=True).first()
     if task:
         logger.info(f"リトライ対象タスク検出: progress_id={task.id}, retry={task.retry_count}/{task.max_retries}")
         return task
 
-    # 2. 未実行
+    # 2. 未実行（排他ロック付き）
     task = db.query(ProgressPlan).filter(
         ProgressPlan.status == 0,
         ProgressPlan.date == today,
-    ).first()
+    ).with_for_update(skip_locked=True).first()
     return task

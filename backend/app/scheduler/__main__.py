@@ -38,6 +38,7 @@ def watchdog():
     """
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
+    from sqlalchemy import or_, and_
     from app.core.database import SessionLocal
     from app.models.progress_plan import ProgressPlan
     from app.services.report_service import send_error_alert
@@ -51,14 +52,20 @@ def watchdog():
         threshold = now - timedelta(minutes=HEARTBEAT_TIMEOUT_MINUTES)
 
         # 1. status=1 でheartbeatが古い（ハング）
+        # heartbeat_atがNULLの場合はupdated_atでフォールバック
         hung_tasks = db.query(ProgressPlan).filter(
             ProgressPlan.status == 1,
-            ProgressPlan.heartbeat_at < threshold,
+            or_(
+                ProgressPlan.heartbeat_at < threshold,
+                and_(
+                    ProgressPlan.heartbeat_at.is_(None),
+                    ProgressPlan.updated_at < threshold
+                )
+            )
         ).all()
 
         for p in hung_tasks:
-            p.retry_count += 1
-            
+            # retry_countはtask_processorで管理するため、ここではインクリメントしない
             if p.retry_count < p.max_retries:
                 # リトライ可能 → PENDINGにリセット
                 logger.warning(

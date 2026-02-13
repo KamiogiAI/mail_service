@@ -77,6 +77,16 @@ def execute_plan_delivery(
         logger.info(f"配信対象ユーザーなし: plan_id={plan.id}")
         return None
 
+    # cursor再開: 指定されたuser_id以降から処理を再開
+    original_count = len(users)
+    if cursor:
+        try:
+            cursor_id = int(cursor)
+            users = [u for u in users if u.id > cursor_id]
+            logger.info(f"Cursor再開: user_id>{cursor_id}、{len(users)}/{original_count}件を処理")
+        except ValueError:
+            logger.warning(f"無効なcursor値: {cursor}、最初から処理")
+
     # 質問定義取得
     questions = db.query(PlanQuestion).filter(PlanQuestion.plan_id == plan.id).order_by(PlanQuestion.sort_order).all()
 
