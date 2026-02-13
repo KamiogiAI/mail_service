@@ -26,6 +26,7 @@ from app.schemas.auth import (
 )
 from app.services import auth_service
 from app.services.mail_service import send_verify_code_email, send_password_reset_email
+from app.services.email_utils import normalize_email, validate_email_for_registration
 from app.routers.deps import get_current_user, require_login
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -35,15 +36,23 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @limiter.limit(REGISTER_RATE_LIMIT)
 async def register(request: Request, req: RegisterRequest, db: Session = Depends(get_db), r=Depends(get_redis)):
     """会員登録"""
-    # 既存ユーザーチェック
-    existing = auth_service.get_user_by_email(db, req.email)
+    # 使い捨てメールチェック
+    email_error = validate_email_for_registration(req.email)
+    if email_error:
+        raise HTTPException(status_code=400, detail=email_error)
+    
+    # メールアドレス正規化（Gmailエイリアス対策）
+    normalized_email = normalize_email(req.email)
+    
+    # 既存ユーザーチェック（正規化後のメールで）
+    existing = auth_service.get_user_by_email(db, normalized_email)
     if existing:
         raise HTTPException(status_code=400, detail="このメールアドレスは既に登録されています")
 
-    # ユーザー作成
+    # ユーザー作成（正規化されたメールで保存、表示用は元のメール）
     user = auth_service.create_user(
         db=db,
-        email=req.email,
+        email=normalized_email,
         password=req.password,
         name_last=req.name_last,
         name_first=req.name_first,
