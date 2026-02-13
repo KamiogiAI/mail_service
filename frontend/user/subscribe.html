@@ -26,10 +26,12 @@
     <script src="js/api.js"></script>
     <script>
         const planId = new URLSearchParams(location.search).get('plan_id');
+        let planQuestions = []; // 質問データを保持
 
         async function loadPlan() {
             try {
                 const plan = await API.get(`/api/plans/${planId}`);
+                planQuestions = plan.questions || [];
                 const el = document.getElementById('plan-detail');
 
                 let questionsHtml = '';
@@ -219,6 +221,52 @@
         async function subscribe() {
             const errEl = document.getElementById('sub-error');
             errEl.textContent = '';
+
+            // 必須項目のバリデーション
+            const missingFields = [];
+            for (const q of planQuestions) {
+                if (!q.is_required) continue;
+                
+                let value = '';
+                switch (q.question_type) {
+                    case 'radio': {
+                        const checked = document.querySelector(`.q-radio[data-qid="${q.id}"]:checked`);
+                        value = checked ? checked.value : '';
+                        break;
+                    }
+                    case 'checkbox': {
+                        const checked = document.querySelectorAll(`.q-check[data-qid="${q.id}"]:checked`);
+                        value = checked.length > 0 ? 'checked' : '';
+                        break;
+                    }
+                    case 'array': {
+                        const container = document.querySelector(`.q-array[data-qid="${q.id}"]`);
+                        if (container) {
+                            const vals = [];
+                            container.querySelectorAll('.q-array-input').forEach(input => {
+                                if (input.value.trim()) vals.push(input.value.trim());
+                            });
+                            const minRequired = parseInt(container.dataset.min) || 1;
+                            value = vals.length >= minRequired ? 'filled' : '';
+                        }
+                        break;
+                    }
+                    default: {
+                        const el = document.getElementById(`q-${q.id}`);
+                        value = el ? el.value.trim() : '';
+                    }
+                }
+                
+                if (!value) {
+                    missingFields.push(q.label);
+                }
+            }
+            
+            if (missingFields.length > 0) {
+                errEl.textContent = `必須項目を入力してください: ${missingFields.join(', ')}`;
+                errEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
 
             const answers = [];
             document.querySelectorAll('.q-input').forEach(el => {
