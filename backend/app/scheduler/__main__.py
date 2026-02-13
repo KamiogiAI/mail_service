@@ -65,40 +65,44 @@ def watchdog():
         ).all()
 
         for p in hung_tasks:
-            # retry_countはtask_processorで管理するため、ここではインクリメントしない
-            if p.retry_count < p.max_retries:
-                # リトライ可能 → PENDINGにリセット
-                logger.warning(
-                    f"ハング検出→リトライ: progress_id={p.id}, plan_id={p.plan_id}, "
-                    f"retry={p.retry_count}/{p.max_retries}"
-                )
-                p.status = 0  # PENDING
-                p.last_error = f"Watchdog: heartbeat timeout ({HEARTBEAT_TIMEOUT_MINUTES}min)"
-            else:
-                # リトライ上限 → ERRORのまま、アラート送信
-                logger.error(
-                    f"ハング検出→リトライ上限: progress_id={p.id}, plan_id={p.plan_id}, "
-                    f"retry={p.retry_count}/{p.max_retries}"
-                )
-                p.status = 3  # ERROR
-                p.last_error = f"Watchdog: max retries exceeded after heartbeat timeout"
-                
-                # アラート送信
-                try:
-                    send_error_alert(
-                        plan_id=p.plan_id,
-                        plan_name=f"Plan ID: {p.plan_id}",
-                        error_message=f"Watchdog: 最大リトライ回数超過 ({p.retry_count}/{p.max_retries})",
-                        details={
-                            "progress_id": p.id,
-                            "last_heartbeat": p.heartbeat_at.isoformat() if p.heartbeat_at else None,
-                        }
+            try:
+                # retry_countはtask_processorで管理するため、ここではインクリメントしない
+                if p.retry_count < p.max_retries:
+                    # リトライ可能 → PENDINGにリセット
+                    logger.warning(
+                        f"ハング検出→リトライ: progress_id={p.id}, plan_id={p.plan_id}, "
+                        f"retry={p.retry_count}/{p.max_retries}"
                     )
-                except Exception as alert_err:
-                    logger.error(f"Watchdogアラート送信失敗: {alert_err}")
-            
-            p.heartbeat_at = now
-            p.updated_at = now
+                    p.status = 0  # PENDING
+                    p.last_error = f"Watchdog: heartbeat timeout ({HEARTBEAT_TIMEOUT_MINUTES}min)"
+                else:
+                    # リトライ上限 → ERRORのまま、アラート送信
+                    logger.error(
+                        f"ハング検出→リトライ上限: progress_id={p.id}, plan_id={p.plan_id}, "
+                        f"retry={p.retry_count}/{p.max_retries}"
+                    )
+                    p.status = 3  # ERROR
+                    p.last_error = f"Watchdog: max retries exceeded after heartbeat timeout"
+                    
+                    # アラート送信
+                    try:
+                        send_error_alert(
+                            plan_id=p.plan_id,
+                            plan_name=f"Plan ID: {p.plan_id}",
+                            error_message=f"Watchdog: 最大リトライ回数超過 ({p.retry_count}/{p.max_retries})",
+                            details={
+                                "progress_id": p.id,
+                                "last_heartbeat": p.heartbeat_at.isoformat() if p.heartbeat_at else None,
+                            }
+                        )
+                    except Exception as alert_err:
+                        logger.error(f"Watchdogアラート送信失敗: {alert_err}")
+                
+                p.heartbeat_at = now
+                p.updated_at = now
+            except Exception as e:
+                logger.error(f"Watchdog個別タスク処理エラー: progress_id={p.id}, error={e}")
+                continue  # 次のタスクへ
 
         db.commit()
 

@@ -323,7 +323,7 @@ def execute_plan_delivery(
 
 
 def _get_target_users(db: Session, plan_id: int, target_user_id: int = None) -> list[User]:
-    """配信対象ユーザーを取得"""
+    """配信対象ユーザーを取得（id昇順でソート）"""
     q = db.query(User).join(
         Subscription, Subscription.user_id == User.id
     ).filter(
@@ -335,7 +335,7 @@ def _get_target_users(db: Session, plan_id: int, target_user_id: int = None) -> 
     )
     if target_user_id:
         q = q.filter(User.id == target_user_id)
-    return q.all()
+    return q.order_by(User.id.asc()).all()  # cursor再開のためid昇順必須
 
 
 def _create_delivery_item(
