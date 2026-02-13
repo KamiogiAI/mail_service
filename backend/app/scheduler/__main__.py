@@ -31,9 +31,10 @@ def hang_detector():
     from app.core.database import SessionLocal
     from app.models.progress_plan import ProgressPlan
 
+    JST = ZoneInfo("Asia/Tokyo")
     db = SessionLocal()
     try:
-        threshold = datetime.now(ZoneInfo("Asia/Tokyo")) - timedelta(minutes=15)
+        threshold = datetime.now(JST) - timedelta(minutes=15)
         hung = db.query(ProgressPlan).filter(
             ProgressPlan.status == 1,
             ProgressPlan.updated_at < threshold,
@@ -42,6 +43,7 @@ def hang_detector():
         for p in hung:
             logger.warning(f"ハング検出: progress_plan id={p.id}, plan_id={p.plan_id}")
             p.status = 0
+            p.updated_at = datetime.now(JST)
         db.commit()
     except Exception as e:
         logger.error(f"ハング検知エラー: {e}")

@@ -102,6 +102,7 @@ def execute_plan_delivery(
             logger.info(f"ProgressPlan更新: id={progress_id}, delivery_id={delivery.id}, status=1")
             progress.delivery_id = delivery.id
             progress.status = 1  # 実行中
+            progress.updated_at = datetime.now(JST)
             db.commit()
         else:
             logger.warning(f"ProgressPlan not found: id={progress_id}")
