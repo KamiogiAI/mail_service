@@ -24,31 +24,88 @@ signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 
 
-def hang_detector():
-    """15分超のstatus=1を検出・リセット"""
+def watchdog():
+    """
+    Watchdog: ハング検出と障害復旧
+
+    検出条件:
+    - status=1 (RUNNING) で heartbeat_at が古い → プロセス死亡と判断
+    - status=3 (ERROR) で retry_count < max_retries → 自動リトライ対象
+
+    復旧アクション:
+    - retry_count < max_retries → status=0 (PENDING) にリセット
+    - retry_count >= max_retries → アラート通知（手動介入要）
+    """
     from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
     from app.core.database import SessionLocal
     from app.models.progress_plan import ProgressPlan
+    from app.services.report_service import send_error_alert
 
     JST = ZoneInfo("Asia/Tokyo")
+    HEARTBEAT_TIMEOUT_MINUTES = 15  # heartbeatがこれより古いとハング判定
+    
     db = SessionLocal()
     try:
-        threshold = datetime.now(JST) - timedelta(minutes=15)
-        hung = db.query(ProgressPlan).filter(
+        now = datetime.now(JST)
+        threshold = now - timedelta(minutes=HEARTBEAT_TIMEOUT_MINUTES)
+
+        # 1. status=1 でheartbeatが古い（ハング）
+        hung_tasks = db.query(ProgressPlan).filter(
             ProgressPlan.status == 1,
-            ProgressPlan.updated_at < threshold,
+            ProgressPlan.heartbeat_at < threshold,
         ).all()
 
-        for p in hung:
-            logger.warning(f"ハング検出: progress_plan id={p.id}, plan_id={p.plan_id}")
-            p.status = 0
-            p.updated_at = datetime.now(JST)
+        for p in hung_tasks:
+            p.retry_count += 1
+            
+            if p.retry_count < p.max_retries:
+                # リトライ可能 → PENDINGにリセット
+                logger.warning(
+                    f"ハング検出→リトライ: progress_id={p.id}, plan_id={p.plan_id}, "
+                    f"retry={p.retry_count}/{p.max_retries}"
+                )
+                p.status = 0  # PENDING
+                p.last_error = f"Watchdog: heartbeat timeout ({HEARTBEAT_TIMEOUT_MINUTES}min)"
+            else:
+                # リトライ上限 → ERRORのまま、アラート送信
+                logger.error(
+                    f"ハング検出→リトライ上限: progress_id={p.id}, plan_id={p.plan_id}, "
+                    f"retry={p.retry_count}/{p.max_retries}"
+                )
+                p.status = 3  # ERROR
+                p.last_error = f"Watchdog: max retries exceeded after heartbeat timeout"
+                
+                # アラート送信
+                try:
+                    send_error_alert(
+                        plan_id=p.plan_id,
+                        plan_name=f"Plan ID: {p.plan_id}",
+                        error_message=f"Watchdog: 最大リトライ回数超過 ({p.retry_count}/{p.max_retries})",
+                        details={
+                            "progress_id": p.id,
+                            "last_heartbeat": p.heartbeat_at.isoformat() if p.heartbeat_at else None,
+                        }
+                    )
+                except Exception as alert_err:
+                    logger.error(f"Watchdogアラート送信失敗: {alert_err}")
+            
+            p.heartbeat_at = now
+            p.updated_at = now
+
         db.commit()
+
+        if hung_tasks:
+            logger.info(f"Watchdog: {len(hung_tasks)}件のハングタスクを処理")
+
     except Exception as e:
-        logger.error(f"ハング検知エラー: {e}")
+        logger.error(f"Watchdogエラー: {e}")
     finally:
         db.close()
+
+
+# 後方互換性のためのエイリアス
+hang_detector = watchdog
 
 
 def main():
