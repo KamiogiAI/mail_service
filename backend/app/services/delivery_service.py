@@ -15,6 +15,7 @@ from app.models.user_answer import UserAnswer
 from app.models.delivery import Delivery
 from app.models.delivery_item import DeliveryItem
 from app.models.system_log import SystemLog
+from app.models.progress_plan import ProgressPlan
 from app.services.openai_service import generate_email_content
 from app.services.variable_resolver import resolve_variables, build_answers_dict
 from app.services.resend_service import send_email
@@ -31,6 +32,28 @@ logger = get_logger(__name__)
 JST = ZoneInfo("Asia/Tokyo")
 MAX_RETRY = 3  # 最大リトライ回数
 
+# Heartbeat更新間隔（送信件数）
+HEARTBEAT_INTERVAL = 5
+
+
+def _update_progress_heartbeat(db: Session, progress_id: int, cursor: str = None):
+    """
+    ProgressPlanのheartbeatを更新する。
+    長時間処理中にWatchdogから死亡判定されないために定期的に呼び出す。
+    """
+    if not progress_id:
+        return
+    try:
+        progress = db.query(ProgressPlan).filter(ProgressPlan.id == progress_id).first()
+        if progress and progress.status == 1:
+            now = datetime.now(JST)
+            progress.heartbeat_at = now
+            if cursor:
+                progress.cursor = cursor
+            db.commit()
+    except Exception as e:
+        logger.warning(f"Heartbeat更新失敗: {e}")
+
 
 def execute_plan_delivery(
     db: Session,
@@ -41,6 +64,7 @@ def execute_plan_delivery(
     target_user_id: int = None,
     api_key: str = None,
     progress_id: int = None,
+    cursor: str = None,  # 途中再開用: 最後に処理したdelivery_item_id
 ) -> Delivery:
     """
     プランの配信を実行する。
@@ -52,6 +76,16 @@ def execute_plan_delivery(
     if not users:
         logger.info(f"配信対象ユーザーなし: plan_id={plan.id}")
         return None
+
+    # cursor再開: 指定されたuser_id以降から処理を再開
+    original_count = len(users)
+    if cursor:
+        try:
+            cursor_id = int(cursor)
+            users = [u for u in users if u.id > cursor_id]
+            logger.info(f"Cursor再開: user_id>{cursor_id}、{len(users)}/{original_count}件を処理")
+        except ValueError:
+            logger.warning(f"無効なcursor値: {cursor}、最初から処理")
 
     # 質問定義取得
     questions = db.query(PlanQuestion).filter(PlanQuestion.plan_id == plan.id).order_by(PlanQuestion.sort_order).all()
@@ -99,10 +133,12 @@ def execute_plan_delivery(
         from app.models.progress_plan import ProgressPlan
         progress = db.query(ProgressPlan).filter(ProgressPlan.id == progress_id).first()
         if progress:
+            now = datetime.now(JST)
             logger.info(f"ProgressPlan更新: id={progress_id}, delivery_id={delivery.id}, status=1")
             progress.delivery_id = delivery.id
             progress.status = 1  # 実行中
-            progress.updated_at = datetime.now(JST)
+            progress.heartbeat_at = now
+            progress.updated_at = now
             db.commit()
         else:
             logger.warning(f"ProgressPlan not found: id={progress_id}")
@@ -168,6 +204,10 @@ def execute_plan_delivery(
                     delivery.fail_count = fail_count
                 db.commit()
 
+                # Heartbeat更新（Watchdog対策）
+                if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
+                    _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
+
                 time.sleep(throttle_seconds)
 
     elif is_batch:
@@ -206,6 +246,11 @@ def execute_plan_delivery(
                     fail_count += 1
                     delivery.fail_count = fail_count
                 db.commit()
+
+                # Heartbeat更新（Watchdog対策）
+                if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
+                    _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
+
                 time.sleep(throttle_seconds)
     else:
         # 通常送信: ユーザーごとにGPT生成
@@ -248,6 +293,10 @@ def execute_plan_delivery(
                 delivery.fail_count = fail_count
             db.commit()
 
+            # Heartbeat更新（Watchdog対策）
+            if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
+                _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
+
             time.sleep(throttle_seconds)
 
     # Delivery完了更新
@@ -274,7 +323,7 @@ def execute_plan_delivery(
 
 
 def _get_target_users(db: Session, plan_id: int, target_user_id: int = None) -> list[User]:
-    """配信対象ユーザーを取得"""
+    """配信対象ユーザーを取得（id昇順でソート）"""
     q = db.query(User).join(
         Subscription, Subscription.user_id == User.id
     ).filter(
@@ -286,7 +335,7 @@ def _get_target_users(db: Session, plan_id: int, target_user_id: int = None) -> 
     )
     if target_user_id:
         q = q.filter(User.id == target_user_id)
-    return q.all()
+    return q.order_by(User.id.asc()).all()  # cursor再開のためid昇順必須
 
 
 def _create_delivery_item(
