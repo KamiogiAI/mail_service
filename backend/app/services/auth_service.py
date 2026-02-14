@@ -63,6 +63,7 @@ def create_user(
     name_last: str,
     name_first: str,
     role: str = "user",
+    email_verified: bool = False,
 ) -> User:
     """新規ユーザー作成"""
     member_no = generate_member_no(db)
@@ -73,7 +74,7 @@ def create_user(
         name_last=name_last,
         name_first=name_first,
         role=role,
-        email_verified=False,
+        email_verified=email_verified,
         is_active=True,
         unsubscribe_token=generate_unsubscribe_token(),
         deliverable=True,
