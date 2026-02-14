@@ -296,6 +296,11 @@ async function loadAnswersCard() {
         }
 
         el.innerHTML = html;
+        
+        // 日付ピッカーを初期化
+        for (const sub of subs) {
+            initDatePickersEdit(sub.plan_id);
+        }
     } catch (e) {
         el.innerHTML = `<div class="dash-card"><p style="color:#c00;">${esc(e.message)}</p></div>`;
     }
@@ -305,62 +310,55 @@ function isMobileEdit() {
     return window.innerWidth <= 768;
 }
 
+const datePickersEdit = {}; // Pickerインスタンスを保持
+
 function renderDateInputEdit(qid, planId, currentValue) {
     if (isMobileEdit()) {
-        // スマホ: 年・月・日のセレクトボックス
-        const currentYear = new Date().getFullYear();
-        const years = [];
-        for (let y = currentYear - 100; y <= currentYear + 10; y++) years.push(y);
-        const months = [];
-        for (let m = 1; m <= 12; m++) months.push(m);
-        const days = [];
-        for (let d = 1; d <= 31; d++) days.push(d);
-
-        let selYear = '', selMonth = '', selDay = '';
-        if (currentValue) {
-            const parts = currentValue.split('-');
-            if (parts.length === 3) {
-                selYear = parseInt(parts[0]);
-                selMonth = parseInt(parts[1]);
-                selDay = parseInt(parts[2]);
-            }
-        }
-
-        return `
-            <div class="date-select-container-edit" data-qid="${qid}" data-plan="${planId}" style="display:flex;gap:8px;flex-wrap:wrap;">
-                <select class="date-select-year" style="flex:1;min-width:80px;padding:10px;border:1px solid #ddd;border-radius:4px;">
-                    <option value="">年</option>
-                    ${years.map(y => `<option value="${y}" ${y === selYear ? 'selected' : ''}>${y}</option>`).join('')}
-                </select>
-                <select class="date-select-month" style="flex:1;min-width:60px;padding:10px;border:1px solid #ddd;border-radius:4px;">
-                    <option value="">月</option>
-                    ${months.map(m => `<option value="${m}" ${m === selMonth ? 'selected' : ''}>${m}</option>`).join('')}
-                </select>
-                <select class="date-select-day" style="flex:1;min-width:60px;padding:10px;border:1px solid #ddd;border-radius:4px;">
-                    <option value="">日</option>
-                    ${days.map(d => `<option value="${d}" ${d === selDay ? 'selected' : ''}>${d}</option>`).join('')}
-                </select>
-            </div>
-        `;
+        // スマホ: Pickerjsでドラムロール式日付選択
+        const displayValue = currentValue || '';
+        return `<input id="q-date-edit-${qid}-${planId}" class="date-picker-input-edit" data-qid="${qid}" data-plan="${planId}" type="text" readonly placeholder="タップして日付を選択" value="${displayValue}">`;
     } else {
         // PC: 従来のdate input
         return `<input class="q-edit" data-qid="${qid}" data-plan="${planId}" type="date" value="${currentValue || ''}">`;
     }
 }
 
-function getDateValueEdit(qid, planId) {
-    const container = document.querySelector(`.date-select-container-edit[data-qid="${qid}"][data-plan="${planId}"]`);
-    if (container) {
-        // スマホ: セレクトボックスから値を取得
-        const year = container.querySelector('.date-select-year').value;
-        const month = container.querySelector('.date-select-month').value;
-        const day = container.querySelector('.date-select-day').value;
-        if (year && month && day) {
-            return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+function initDatePickersEdit(planId) {
+    if (!isMobileEdit()) return;
+    if (typeof Picker === 'undefined') return; // Pickerが読み込まれていない場合
+    
+    document.querySelectorAll(`.date-picker-input-edit[data-plan="${planId}"]`).forEach(el => {
+        const qid = el.dataset.qid;
+        const key = `${qid}-${planId}`;
+        if (datePickersEdit[key]) return; // 既に初期化済み
+        
+        datePickersEdit[key] = new Picker(el, {
+            format: 'YYYY-MM-DD',
+            text: {
+                title: '日付を選択',
+                cancel: 'キャンセル',
+                confirm: '決定'
+            },
+            translate(type, text) {
+                if (type === 'year') return text + '年';
+                if (type === 'month') return text + '月';
+                if (type === 'day') return text + '日';
+                return text;
+            }
+        });
+        
+        // 初期値がある場合はPickerにセット
+        if (el.value) {
+            datePickersEdit[key].setDate(new Date(el.value));
         }
-        return '';
+    });
+}
+
+function getDateValueEdit(qid, planId) {
+    if (isMobileEdit()) {
+        const el = document.getElementById(`q-date-edit-${qid}-${planId}`);
+        return el ? el.value : '';
     } else {
-        // PC: 従来のinputから取得
         const el = document.querySelector(`.q-edit[data-qid="${qid}"][data-plan="${planId}"][type="date"]`);
         return el ? el.value : '';
     }
@@ -480,11 +478,10 @@ async function saveAnswers(planId) {
             answers.push({ question_id: parseInt(el.dataset.qid), answer: el.value });
         }
     });
-    // 日付タイプ（スマホ: セレクトボックス or PC: date input）
-    document.querySelectorAll(`.date-select-container-edit[data-plan="${planId}"]`).forEach(container => {
-        const qid = container.dataset.qid;
-        const dateVal = getDateValueEdit(qid, planId);
-        answers.push({ question_id: parseInt(qid), answer: dateVal });
+    // 日付タイプ（スマホ: Picker or PC: date input）
+    document.querySelectorAll(`.date-picker-input-edit[data-plan="${planId}"]`).forEach(el => {
+        const qid = el.dataset.qid;
+        answers.push({ question_id: parseInt(qid), answer: el.value });
     });
     // PCのdate inputも処理
     document.querySelectorAll(`.q-edit[data-plan="${planId}"][type="date"]`).forEach(el => {

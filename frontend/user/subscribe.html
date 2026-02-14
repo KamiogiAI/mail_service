@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>プラン詳細</title>
     <link rel="stylesheet" href="../assets/common.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pickerjs@1/dist/picker.min.css">
+    <style>
+        .date-picker-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fff;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .date-picker-input:read-only {
+            background: #fff;
+        }
+    </style>
 </head>
 <body>
     <header class="header">
@@ -24,6 +39,7 @@
 
     <script src="/assets/site.js"></script>
     <script src="js/api.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pickerjs@1/dist/picker.min.js"></script>
     <script>
         const planId = new URLSearchParams(location.search).get('plan_id');
         let planQuestions = []; // 質問データを保持
@@ -70,52 +86,46 @@
             return window.innerWidth <= 768;
         }
 
+        const datePickers = {}; // Pickerインスタンスを保持
+
         function renderDateInput(qid) {
             if (isMobile()) {
-                // スマホ: 年・月・日のセレクトボックス
-                const currentYear = new Date().getFullYear();
-                const years = [];
-                for (let y = currentYear - 100; y <= currentYear + 10; y++) years.push(y);
-                const months = [];
-                for (let m = 1; m <= 12; m++) months.push(m);
-                const days = [];
-                for (let d = 1; d <= 31; d++) days.push(d);
-
-                return `
-                    <div class="date-select-container" data-qid="${qid}" style="display:flex;gap:8px;flex-wrap:wrap;">
-                        <select class="date-select-year" style="flex:1;min-width:80px;padding:10px;border:1px solid #ddd;border-radius:4px;">
-                            <option value="">年</option>
-                            ${years.map(y => `<option value="${y}">${y}</option>`).join('')}
-                        </select>
-                        <select class="date-select-month" style="flex:1;min-width:60px;padding:10px;border:1px solid #ddd;border-radius:4px;">
-                            <option value="">月</option>
-                            ${months.map(m => `<option value="${m}">${m}</option>`).join('')}
-                        </select>
-                        <select class="date-select-day" style="flex:1;min-width:60px;padding:10px;border:1px solid #ddd;border-radius:4px;">
-                            <option value="">日</option>
-                            ${days.map(d => `<option value="${d}">${d}</option>`).join('')}
-                        </select>
-                    </div>
-                `;
+                // スマホ: Pickerjsでドラムロール式日付選択
+                return `<input id="q-date-${qid}" class="date-picker-input" data-qid="${qid}" type="text" readonly placeholder="タップして日付を選択">`;
             } else {
                 // PC: 従来のdate input
                 return `<input id="q-${qid}" class="q-input" data-qid="${qid}" type="date">`;
             }
         }
 
+        function initDatePickers() {
+            if (!isMobile()) return;
+            document.querySelectorAll('.date-picker-input').forEach(el => {
+                const qid = el.dataset.qid;
+                if (datePickers[qid]) return; // 既に初期化済み
+                
+                datePickers[qid] = new Picker(el, {
+                    format: 'YYYY-MM-DD',
+                    text: {
+                        title: '日付を選択',
+                        cancel: 'キャンセル',
+                        confirm: '決定'
+                    },
+                    translate(type, text) {
+                        if (type === 'year') return text + '年';
+                        if (type === 'month') return text + '月';
+                        if (type === 'day') return text + '日';
+                        return text;
+                    }
+                });
+            });
+        }
+
         function getDateValue(qid) {
-            const container = document.querySelector(`.date-select-container[data-qid="${qid}"]`);
-            if (container) {
-                // スマホ: セレクトボックスから値を取得
-                const year = container.querySelector('.date-select-year').value;
-                const month = container.querySelector('.date-select-month').value;
-                const day = container.querySelector('.date-select-day').value;
-                if (year && month && day) {
-                    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                }
-                return '';
+            if (isMobile()) {
+                const el = document.getElementById(`q-date-${qid}`);
+                return el ? el.value : '';
             } else {
-                // PC: 従来のinputから取得
                 const el = document.getElementById(`q-${qid}`);
                 return el ? el.value : '';
             }
@@ -123,17 +133,16 @@
 
         function setDateValue(qid, value) {
             if (!value) return;
-            const container = document.querySelector(`.date-select-container[data-qid="${qid}"]`);
-            if (container) {
-                // スマホ: セレクトボックスに値をセット
-                const parts = value.split('-');
-                if (parts.length === 3) {
-                    container.querySelector('.date-select-year').value = parseInt(parts[0]);
-                    container.querySelector('.date-select-month').value = parseInt(parts[1]);
-                    container.querySelector('.date-select-day').value = parseInt(parts[2]);
+            if (isMobile()) {
+                const el = document.getElementById(`q-date-${qid}`);
+                if (el) {
+                    el.value = value;
+                    // Pickerにも日付をセット
+                    if (datePickers[qid]) {
+                        datePickers[qid].setDate(new Date(value));
+                    }
                 }
             } else {
-                // PC: 従来のinputにセット
                 const el = document.getElementById(`q-${qid}`);
                 if (el) el.value = value;
             }
@@ -410,7 +419,13 @@
             return d.innerHTML;
         }
 
-        loadPlan().then(() => prefillAnswers());
+        loadPlan().then(() => {
+            initDatePickers();
+            return prefillAnswers();
+        }).then(() => {
+            // プリフィル後に再度初期化（値の反映のため）
+            initDatePickers();
+        });
     </script>
 </body>
 </html>
