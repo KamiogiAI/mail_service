@@ -227,14 +227,26 @@ async def checkout_complete(
 async def billing_portal(
     req: BillingPortalRequest,
     user: User = Depends(require_login),
+    db: Session = Depends(get_db),
 ):
-    """Stripe Billing Portal"""
+    """Stripe Billing Portal
+    
+    トライアル中のユーザーはプラン変更が無効なポータルを表示
+    """
     if not user.stripe_customer_id:
         raise HTTPException(status_code=400, detail="決済情報が見つかりません")
 
+    # トライアル中かどうかを確認
+    is_trial = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.status == "trialing",
+    ).first() is not None
+
     return_url = req.return_url or f"{settings.SITE_URL}/user/mypage.html"
     try:
-        url = stripe_service.create_billing_portal_session(user.stripe_customer_id, return_url)
+        url = stripe_service.create_billing_portal_session(
+            user.stripe_customer_id, return_url, is_trial=is_trial
+        )
     except Exception as e:
         logger.error(f"Stripe Billing Portal作成失敗: user_id={user.stripe_customer_id}, error={e}")
         raise HTTPException(status_code=500, detail="決済ポータルの作成に失敗しました")
@@ -339,91 +351,3 @@ async def cancel_subscription(
         )
 
     return {"message": "解約予約しました。期間終了まで引き続きご利用いただけます。"}
-
-
-class ChangePlanRequest(BaseModel):
-    new_plan_id: int
-
-
-@router.post("/change-plan/{subscription_id}")
-async def change_plan(
-    subscription_id: int,
-    req: ChangePlanRequest,
-    user: User = Depends(require_login),
-    db: Session = Depends(get_db),
-):
-    """プラン変更 (トライアル中は日割りなし、通常は日割りあり)"""
-    from zoneinfo import ZoneInfo
-    from app.services.mail_service import send_plan_change_email
-    JST = ZoneInfo("Asia/Tokyo")
-    
-    sub = db.query(Subscription).filter(
-        Subscription.id == subscription_id,
-        Subscription.user_id == user.id,
-    ).first()
-    if not sub:
-        raise HTTPException(status_code=404, detail="購読が見つかりません")
-    
-    if not sub.stripe_subscription_id:
-        raise HTTPException(status_code=400, detail="Stripe購読情報が見つかりません")
-    
-    # 新しいプランを取得
-    new_plan = db.query(Plan).filter(Plan.id == req.new_plan_id, Plan.is_active == True).first()
-    if not new_plan:
-        raise HTTPException(status_code=404, detail="指定されたプランが見つかりません")
-    
-    if not new_plan.stripe_price_id:
-        raise HTTPException(status_code=400, detail="プランの価格情報が設定されていません")
-    
-    if sub.plan_id == req.new_plan_id:
-        raise HTTPException(status_code=400, detail="現在と同じプランです")
-    
-    # トライアル中かどうかを判定
-    is_trial = sub.status == "trialing"
-    
-    old_plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
-    old_plan_name = old_plan.name if old_plan else "不明"
-    
-    try:
-        # Stripeでプラン変更
-        updated_sub = stripe_service.change_subscription_plan(
-            subscription_id=sub.stripe_subscription_id,
-            new_price_id=new_plan.stripe_price_id,
-            is_trial=is_trial,
-        )
-        
-        # DBを更新
-        sub.plan_id = new_plan.id
-        sub.status = updated_sub.get("status", sub.status)
-        if updated_sub.get("current_period_end"):
-            from datetime import datetime
-            sub.current_period_end = datetime.fromtimestamp(updated_sub["current_period_end"])
-        
-        # ダウングレード予約があれば解除
-        sub.scheduled_plan_id = None
-        sub.scheduled_change_at = None
-        
-        db.commit()
-        
-        # プラン変更メール送信
-        next_date = sub.current_period_end.astimezone(JST).strftime("%Y年%m月%d日") if sub.current_period_end else "-"
-        send_plan_change_email(
-            to_email=user.email,
-            name=f"{user.name_last} {user.name_first}",
-            old_plan_name=old_plan_name,
-            new_plan_name=new_plan.name,
-            new_price=new_plan.price,
-            effective_date="即時" if not is_trial else "トライアル終了後",
-        )
-        
-        logger.info(f"プラン変更: user_id={user.id}, {old_plan_name} -> {new_plan.name}, is_trial={is_trial}")
-        
-        return {
-            "message": f"プランを{new_plan.name}に変更しました",
-            "is_trial": is_trial,
-            "proration_applied": not is_trial,
-        }
-        
-    except Exception as e:
-        logger.error(f"プラン変更失敗: subscription_id={sub.stripe_subscription_id}, error={e}")
-        raise HTTPException(status_code=500, detail="プラン変更に失敗しました")
