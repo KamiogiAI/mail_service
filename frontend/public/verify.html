@@ -58,7 +58,10 @@
                 }
                 const csrf = res.headers.get('X-CSRF-Token');
                 if (csrf) localStorage.setItem('csrf_token', csrf);
-                location.href = '../user/mypage.html';
+                const planId = new URLSearchParams(location.search).get('plan_id');
+                location.href = planId 
+                    ? `../user/subscribe.html?plan_id=${planId}`
+                    : '../user/mypage.html';
             } catch (e) {
                 errEl.textContent = e.message;
             }

@@ -419,13 +419,23 @@
             return d.innerHTML;
         }
 
-        loadPlan().then(() => {
-            initDatePickers();
-            return prefillAnswers();
-        }).then(() => {
-            // プリフィル後に再度初期化（値の反映のため）
-            initDatePickers();
-        });
+        // ログインチェック: 未ログインなら会員登録ページへリダイレクト
+        (async function checkAuth() {
+            try {
+                const res = await fetch('/api/auth/me', { credentials: 'include' });
+                if (!res.ok) throw new Error('Not logged in');
+                // ログイン済み: プラン読み込み
+                loadPlan().then(() => {
+                    initDatePickers();
+                    return prefillAnswers();
+                }).then(() => {
+                    initDatePickers();
+                });
+            } catch (e) {
+                // 未ログイン: 会員登録ページへリダイレクト（plan_idを引き継ぐ）
+                location.href = `/register.html?plan_id=${planId}`;
+            }
+        })();
     </script>
 </body>
 </html>

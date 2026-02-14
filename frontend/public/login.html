@@ -48,10 +48,13 @@
                     }),
                 });
                 const data = await res.json();
+                const planId = new URLSearchParams(location.search).get('plan_id');
                 if (!res.ok) {
                     // メール認証が必要な場合
                     if (data.needs_verification && data.user_id) {
-                        location.href = `verify.html?user_id=${data.user_id}`;
+                        location.href = planId
+                            ? `verify.html?user_id=${data.user_id}&plan_id=${planId}`
+                            : `verify.html?user_id=${data.user_id}`;
                         return;
                     }
                     const msg = typeof data.detail === 'string' ? data.detail
@@ -61,7 +64,9 @@
                 }
                 const csrf = res.headers.get('X-CSRF-Token');
                 if (csrf) localStorage.setItem('csrf_token', csrf);
-                location.href = '../user/mypage.html';
+                location.href = planId
+                    ? `../user/subscribe.html?plan_id=${planId}`
+                    : '../user/mypage.html';
             } catch (e) {
                 errEl.textContent = e.message;
             }
