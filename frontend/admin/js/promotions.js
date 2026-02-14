@@ -2,6 +2,7 @@
  * プロモーションコード管理UI
  */
 let _promoPlans = [];
+let _editingPromoId = null;
 
 const PromotionsPage = {
     async render(container) {
@@ -14,7 +15,7 @@ const PromotionsPage = {
             <div class="modal" id="promo-modal">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h2>プロモーションコード作成</h2>
+                        <h2 id="promo-modal-title">プロモーションコード作成</h2>
                         <button class="close-btn" onclick="PromotionsPage.closeModal()">&times;</button>
                     </div>
                     <div class="form-group"><label>コード</label><input id="promo-code" type="text" placeholder="SUMMER2025"></div>
@@ -27,14 +28,14 @@ const PromotionsPage = {
                     </div>
                     <div class="form-group"><label>割引値</label><input id="promo-value" type="number" min="1"></div>
                     <div class="form-group"><label>最大使用回数 (空欄=無制限)</label><input id="promo-max" type="number" min="1"></div>
-                    <div class="form-group"><label>有効期限</label><input id="promo-expires" type="date"></div>
+                    <div class="form-group"><label>有効期限 (空欄=無制限)</label><input id="promo-expires" type="date"></div>
                     <div class="form-group">
                         <label>適用プラン (未選択=全プラン)</label>
                         <div id="promo-plans-checkboxes" style="margin-top:6px;"></div>
                     </div>
                     <div class="modal-footer">
                         <button class="btn btn-secondary" onclick="PromotionsPage.closeModal()">キャンセル</button>
-                        <button class="btn" onclick="PromotionsPage.create()">作成</button>
+                        <button class="btn" id="promo-submit-btn" onclick="PromotionsPage.submit()">作成</button>
                     </div>
                     <div id="promo-error" class="error-message"></div>
                 </div>
@@ -67,6 +68,7 @@ const PromotionsPage = {
                         if (p.eligible_plan_ids && p.eligible_plan_ids.length > 0) {
                             planLabel = p.eligible_plan_ids.map(id => planMap[id] || `ID:${id}`).join(', ');
                         }
+                        const editData = encodeURIComponent(JSON.stringify(p));
                         return `
                         <tr>
                             <td><strong>${p.code}</strong></td>
@@ -74,9 +76,12 @@ const PromotionsPage = {
                             <td>${p.times_redeemed}</td>
                             <td>${p.max_redemptions || '無制限'}</td>
                             <td>${planLabel}</td>
-                            <td>${p.expires_at ? new Date(p.expires_at).toLocaleDateString('ja-JP') : '-'}</td>
+                            <td>${p.expires_at ? new Date(p.expires_at).toLocaleDateString('ja-JP') : '無制限'}</td>
                             <td><span class="badge ${p.is_active ? 'badge-active' : 'badge-inactive'}">${p.is_active ? '有効' : '無効'}</span></td>
-                            <td>${p.is_active ? `<button class="btn btn-sm btn-danger" onclick="PromotionsPage.deactivate(${p.id})">無効化</button>` : ''}</td>
+                            <td>
+                                <button class="btn btn-sm" onclick="PromotionsPage.showEdit('${editData}')">編集</button>
+                                ${p.is_active ? `<button class="btn btn-sm btn-danger" onclick="PromotionsPage.deactivate(${p.id})">無効化</button>` : ''}
+                            </td>
                         </tr>`;
                     }).join('')}</tbody>
                 </table></div>
@@ -87,10 +92,48 @@ const PromotionsPage = {
     },
 
     async showCreate() {
+        _editingPromoId = null;
+        document.getElementById('promo-modal-title').textContent = 'プロモーションコード作成';
+        document.getElementById('promo-submit-btn').textContent = '作成';
         document.getElementById('promo-modal').classList.add('active');
         document.getElementById('promo-error').textContent = '';
 
-        // プラン一覧をチェックボックスで表示
+        // フォームをリセット
+        document.getElementById('promo-code').value = '';
+        document.getElementById('promo-type').value = 'percent_off';
+        document.getElementById('promo-value').value = '';
+        document.getElementById('promo-max').value = '';
+        document.getElementById('promo-expires').value = '';
+
+        await this._loadPlanCheckboxes([]);
+    },
+
+    async showEdit(encodedData) {
+        const promo = JSON.parse(decodeURIComponent(encodedData));
+        _editingPromoId = promo.id;
+        document.getElementById('promo-modal-title').textContent = 'プロモーションコード編集';
+        document.getElementById('promo-submit-btn').textContent = '更新';
+        document.getElementById('promo-modal').classList.add('active');
+        document.getElementById('promo-error').textContent = '';
+
+        // フォームに値をセット
+        document.getElementById('promo-code').value = promo.code || '';
+        document.getElementById('promo-type').value = promo.discount_type || 'percent_off';
+        document.getElementById('promo-value').value = promo.discount_value || '';
+        document.getElementById('promo-max').value = promo.max_redemptions || '';
+        
+        // 有効期限を日付形式に変換
+        if (promo.expires_at) {
+            const date = new Date(promo.expires_at);
+            document.getElementById('promo-expires').value = date.toISOString().split('T')[0];
+        } else {
+            document.getElementById('promo-expires').value = '';
+        }
+
+        await this._loadPlanCheckboxes(promo.eligible_plan_ids || []);
+    },
+
+    async _loadPlanCheckboxes(selectedIds) {
         const container = document.getElementById('promo-plans-checkboxes');
         try {
             if (_promoPlans.length === 0) {
@@ -102,7 +145,7 @@ const PromotionsPage = {
             }
             container.innerHTML = _promoPlans.map(p => `
                 <label style="display:block;margin-bottom:4px;cursor:pointer;">
-                    <input type="checkbox" class="promo-plan-check" value="${p.id}"> ${p.name} (¥${p.price.toLocaleString()}/月)
+                    <input type="checkbox" class="promo-plan-check" value="${p.id}" ${selectedIds.includes(p.id) ? 'checked' : ''}> ${p.name} (¥${p.price.toLocaleString()}/月)
                 </label>
             `).join('');
         } catch {
@@ -112,6 +155,15 @@ const PromotionsPage = {
 
     closeModal() {
         document.getElementById('promo-modal').classList.remove('active');
+        _editingPromoId = null;
+    },
+
+    async submit() {
+        if (_editingPromoId) {
+            await this.update();
+        } else {
+            await this.create();
+        }
     },
 
     async create() {
@@ -129,6 +181,35 @@ const PromotionsPage = {
 
         try {
             await API.post('/api/admin/promotions', {
+                code,
+                discount_type: document.getElementById('promo-type').value,
+                discount_value: value,
+                max_redemptions: parseInt(document.getElementById('promo-max').value) || null,
+                expires_at: document.getElementById('promo-expires').value || null,
+                eligible_plan_ids: checkedIds.length > 0 ? checkedIds : null,
+            });
+            this.closeModal();
+            await this.load();
+        } catch (e) {
+            errEl.textContent = e.message;
+        }
+    },
+
+    async update() {
+        const errEl = document.getElementById('promo-error');
+        errEl.textContent = '';
+        const code = document.getElementById('promo-code').value.trim();
+        const value = parseInt(document.getElementById('promo-value').value);
+        if (!code || !value) { errEl.textContent = 'コードと割引値は必須です'; return; }
+
+        // 選択されたプランIDを収集
+        const checkedIds = [];
+        document.querySelectorAll('.promo-plan-check:checked').forEach(el => {
+            checkedIds.push(parseInt(el.value));
+        });
+
+        try {
+            await API.put(`/api/admin/promotions/${_editingPromoId}`, {
                 code,
                 discount_type: document.getElementById('promo-type').value,
                 discount_value: value,
