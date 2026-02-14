@@ -270,6 +270,11 @@ async def update_plan(plan_id: int, data: PlanUpdate, db: Session = Depends(get_
         int(h); int(m)
     except (ValueError, AttributeError):
         raise HTTPException(status_code=400, detail="send_timeの形式が不正です（HH:MM）")
+    
+    # 価格変更を検知するために旧価格を保存
+    old_price = plan.price
+    old_stripe_price_id = plan.stripe_price_id
+    
     plan.name = data.name
     plan.description = data.description
     plan.price = data.price
@@ -291,6 +296,29 @@ async def update_plan(plan_id: int, data: PlanUpdate, db: Session = Depends(get_
             stripe_service.update_product(plan.stripe_product_id, data.name, data.description or "")
         except Exception as e:
             logger.warning(f"Stripe Product更新失敗 (product_id={plan.stripe_product_id}): {e}")
+    
+    # 価格が変更された場合、新しいStripe Priceを作成
+    if old_price != data.price and plan.stripe_product_id:
+        try:
+            # 新しいPriceを作成
+            new_price_id = stripe_service.create_price(
+                product_id=plan.stripe_product_id,
+                unit_amount=data.price,
+                currency="jpy",
+                interval="month"
+            )
+            plan.stripe_price_id = new_price_id
+            logger.info(f"Stripe Price更新: {old_stripe_price_id} → {new_price_id} (¥{old_price} → ¥{data.price})")
+            
+            # 古いPriceをアーカイブ（既存サブスクリプションには影響しない）
+            if old_stripe_price_id:
+                try:
+                    stripe_service.archive_price(old_stripe_price_id)
+                except Exception as e:
+                    logger.warning(f"旧Price アーカイブ失敗: {e}")
+        except Exception as e:
+            logger.error(f"Stripe Price作成失敗: {e}")
+            raise HTTPException(status_code=500, detail=f"Stripe価格更新に失敗しました: {e}")
 
     db.commit()
     

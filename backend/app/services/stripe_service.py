@@ -40,6 +40,24 @@ def archive_product(product_id: str):
     stripe.Product.modify(product_id, active=False)
 
 
+def create_price(product_id: str, unit_amount: int, currency: str = "jpy", interval: str = "month") -> str:
+    """新しい Stripe Price を作成"""
+    _init_stripe()
+    price = stripe.Price.create(
+        product=product_id,
+        unit_amount=unit_amount,
+        currency=currency,
+        recurring={"interval": interval},
+    )
+    return price.id
+
+
+def archive_price(price_id: str):
+    """Stripe Price をアーカイブ（非アクティブ化）"""
+    _init_stripe()
+    stripe.Price.modify(price_id, active=False)
+
+
 def create_checkout_session(
     price_id: str,
     customer_id: Optional[str],
