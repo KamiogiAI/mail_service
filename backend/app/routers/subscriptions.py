@@ -307,6 +307,10 @@ async def cancel_subscription(
     db: Session = Depends(get_db),
 ):
     """購読解約 (期間終了まで継続)"""
+    from zoneinfo import ZoneInfo
+    from app.services.mail_service import send_cancel_scheduled_email
+    JST = ZoneInfo("Asia/Tokyo")
+    
     sub = db.query(Subscription).filter(
         Subscription.id == subscription_id,
         Subscription.user_id == user.id,
@@ -322,5 +326,16 @@ async def cancel_subscription(
             raise HTTPException(status_code=500, detail="解約処理に失敗しました")
     sub.cancel_at_period_end = True
     db.commit()
+    
+    # 解約予約完了メール送信
+    plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+    if plan:
+        end_date = sub.current_period_end.astimezone(JST).strftime("%Y年%m月%d日") if sub.current_period_end else "-"
+        send_cancel_scheduled_email(
+            to_email=user.email,
+            name=f"{user.name_last} {user.name_first}",
+            plan_name=plan.name,
+            end_date=end_date,
+        )
 
     return {"message": "解約予約しました。期間終了まで引き続きご利用いただけます。"}

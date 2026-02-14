@@ -160,3 +160,240 @@ def send_admin_invite_email(to_email: str, name: str, temp_password: str) -> boo
     except Exception as e:
         logger.error(f"管理者招待メール送信失敗: {to_email} - {e}")
         return False
+
+
+# =========================================================
+# 購読関連メール
+# =========================================================
+
+def send_subscription_welcome_email(
+    to_email: str,
+    name: str,
+    plan_name: str,
+    plan_price: int,
+    next_billing_date: str,
+    is_trial: bool = False,
+    trial_end_date: str = None,
+) -> bool:
+    """加入完了メール"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        
+        trial_notice = ""
+        if is_trial and trial_end_date:
+            trial_notice = f"""
+            <div style="background: #fff3cd; padding: 15px; margin: 20px 0; border-radius: 5px; border-left: 4px solid #ffc107;">
+                <p style="margin: 0; color: #856404;"><strong>🎁 初月無料トライアル中</strong></p>
+                <p style="margin: 10px 0 0 0; color: #856404;">
+                    トライアル期間: <strong>{trial_end_date}</strong> まで<br>
+                    期間中に解約されない場合、自動的に有料プランへ移行し、月額 <strong>¥{plan_price:,}</strong> が請求されます。
+                </p>
+            </div>
+            """
+        
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">🎉 ご加入ありがとうございます！</h2>
+            <p>{name} 様</p>
+            <p>「<strong>{plan_name}</strong>」プランへのご加入が完了しました。</p>
+            
+            <div style="background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 5px 0;"><strong>プラン名:</strong> {plan_name}</p>
+                <p style="margin: 5px 0;"><strong>月額料金:</strong> ¥{plan_price:,}</p>
+                <p style="margin: 5px 0;"><strong>次回更新日:</strong> {next_billing_date}</p>
+            </div>
+            
+            {trial_notice}
+            
+            <p>マイページからいつでもプラン変更・解約が可能です。</p>
+            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #28a745; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページを見る</a></p>
+        </div>
+        """
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": f"【{get_site_name()}】ご加入ありがとうございます",
+            "html": html,
+        })
+        logger.info(f"加入完了メール送信: {to_email}, plan={plan_name}")
+        return True
+    except Exception as e:
+        logger.error(f"加入完了メール送信失敗: {to_email} - {e}")
+        return False
+
+
+def send_plan_change_email(
+    to_email: str,
+    name: str,
+    old_plan_name: str,
+    new_plan_name: str,
+    new_plan_price: int,
+    change_date: str,
+    is_immediate: bool = True,
+) -> bool:
+    """プラン変更通知メール"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        
+        if is_immediate:
+            timing_text = "本日より"
+            notice = "日割り計算により、差額が請求または返金されます。"
+        else:
+            timing_text = f"{change_date} より"
+            notice = "現在のプランは期間終了まで引き続きご利用いただけます。"
+        
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>📋 プラン変更のお知らせ</h2>
+            <p>{name} 様</p>
+            <p>プランの変更が完了しました。</p>
+            
+            <div style="background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 5px 0;"><strong>変更前:</strong> {old_plan_name}</p>
+                <p style="margin: 5px 0;"><strong>変更後:</strong> {new_plan_name} (月額 ¥{new_plan_price:,})</p>
+                <p style="margin: 5px 0;"><strong>適用日:</strong> {timing_text}</p>
+            </div>
+            
+            <p style="color: #666;">{notice}</p>
+            
+            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #4285f4; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
+        </div>
+        """
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": f"【{get_site_name()}】プラン変更完了のお知らせ",
+            "html": html,
+        })
+        logger.info(f"プラン変更メール送信: {to_email}, {old_plan_name} → {new_plan_name}")
+        return True
+    except Exception as e:
+        logger.error(f"プラン変更メール送信失敗: {to_email} - {e}")
+        return False
+
+
+def send_cancel_scheduled_email(
+    to_email: str,
+    name: str,
+    plan_name: str,
+    end_date: str,
+) -> bool:
+    """解約予約完了メール"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>📝 解約予約を受け付けました</h2>
+            <p>{name} 様</p>
+            <p>「<strong>{plan_name}</strong>」プランの解約予約を承りました。</p>
+            
+            <div style="background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 5px 0;"><strong>プラン名:</strong> {plan_name}</p>
+                <p style="margin: 5px 0;"><strong>終了日:</strong> {end_date}</p>
+            </div>
+            
+            <p><strong>{end_date}</strong> まで引き続きサービスをご利用いただけます。</p>
+            <p>解約を取り消す場合は、マイページから再開手続きが可能です。</p>
+            
+            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #6c757d; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
+            
+            <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                ご利用いただきありがとうございました。<br>
+                またのご利用をお待ちしております。
+            </p>
+        </div>
+        """
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": f"【{get_site_name()}】解約予約完了のお知らせ",
+            "html": html,
+        })
+        logger.info(f"解約予約メール送信: {to_email}, plan={plan_name}")
+        return True
+    except Exception as e:
+        logger.error(f"解約予約メール送信失敗: {to_email} - {e}")
+        return False
+
+
+def send_trial_ending_email(
+    to_email: str,
+    name: str,
+    plan_name: str,
+    plan_price: int,
+    trial_end_date: str,
+) -> bool:
+    """トライアル終了間近メール（3日前）"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #ffc107;">⏰ トライアル終了のお知らせ</h2>
+            <p>{name} 様</p>
+            <p>「<strong>{plan_name}</strong>」プランの無料トライアル期間がまもなく終了します。</p>
+            
+            <div style="background: #fff3cd; padding: 20px; margin: 20px 0; border-radius: 5px; border-left: 4px solid #ffc107;">
+                <p style="margin: 5px 0;"><strong>トライアル終了日:</strong> {trial_end_date}</p>
+                <p style="margin: 5px 0;"><strong>継続時の月額料金:</strong> ¥{plan_price:,}</p>
+            </div>
+            
+            <p><strong>継続する場合:</strong><br>
+            特に手続きは不要です。トライアル終了後、自動的に有料プランへ移行します。</p>
+            
+            <p><strong>解約する場合:</strong><br>
+            トライアル期間中にマイページから解約手続きを行ってください。</p>
+            
+            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #ffc107; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
+        </div>
+        """
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": f"【{get_site_name()}】トライアル終了まであと3日です",
+            "html": html,
+        })
+        logger.info(f"トライアル終了間近メール送信: {to_email}, plan={plan_name}")
+        return True
+    except Exception as e:
+        logger.error(f"トライアル終了間近メール送信失敗: {to_email} - {e}")
+        return False
+
+
+def send_renewal_complete_email(
+    to_email: str,
+    name: str,
+    plan_name: str,
+    amount: int,
+    next_billing_date: str,
+) -> bool:
+    """更新完了メール（毎月の請求成功時）"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #28a745;">✅ 更新完了のお知らせ</h2>
+            <p>{name} 様</p>
+            <p>「<strong>{plan_name}</strong>」プランの更新が完了しました。</p>
+            
+            <div style="background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 5px 0;"><strong>プラン名:</strong> {plan_name}</p>
+                <p style="margin: 5px 0;"><strong>今回のお支払い:</strong> ¥{amount:,}</p>
+                <p style="margin: 5px 0;"><strong>次回更新日:</strong> {next_billing_date}</p>
+            </div>
+            
+            <p>引き続きサービスをお楽しみください。</p>
+            
+            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #28a745; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページを見る</a></p>
+        </div>
+        """
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": f"【{get_site_name()}】更新完了のお知らせ",
+            "html": html,
+        })
+        logger.info(f"更新完了メール送信: {to_email}, plan={plan_name}, amount={amount}")
+        return True
+    except Exception as e:
+        logger.error(f"更新完了メール送信失敗: {to_email} - {e}")
+        return False

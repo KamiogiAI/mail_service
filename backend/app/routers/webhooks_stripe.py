@@ -2,10 +2,16 @@
 from fastapi import APIRouter, Request, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from app.core.database import SessionLocal
 from app.core.api_keys import get_stripe_webhook_secret
 from app.services import stripe_service, subscription_service
+from app.services.mail_service import (
+    send_subscription_welcome_email,
+    send_plan_change_email,
+    send_renewal_complete_email,
+)
 from app.models.user import User
 from app.models.plan import Plan
 from app.models.subscription import Subscription
@@ -13,6 +19,7 @@ from app.models.processed_stripe_event import ProcessedStripeEvent
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+JST = ZoneInfo("Asia/Tokyo")
 
 router = APIRouter(tags=["webhooks"])
 
@@ -157,6 +164,23 @@ def _handle_checkout_completed(db: Session, data: dict):
     )
 
     logger.info(f"Checkout完了: user_id={user_id}, plan_id={plan_id}, status={status}")
+    
+    # 加入完了メール送信
+    if user and plan:
+        is_trial = status == "trialing"
+        next_date = trial_end if is_trial else current_period_end
+        next_date_str = next_date.astimezone(JST).strftime("%Y年%m月%d日") if next_date else "-"
+        trial_end_str = trial_end.astimezone(JST).strftime("%Y年%m月%d日") if trial_end else None
+        
+        send_subscription_welcome_email(
+            to_email=user.email,
+            name=f"{user.name_last} {user.name_first}",
+            plan_name=plan.name,
+            plan_price=plan.price,
+            next_billing_date=next_date_str,
+            is_trial=is_trial,
+            trial_end_date=trial_end_str,
+        )
 
 
 def _handle_subscription_created(db: Session, data: dict):
@@ -215,6 +239,22 @@ def _handle_subscription_created(db: Session, data: dict):
     )
 
     logger.info(f"subscription.created: レコード作成 user_id={user.id}, plan_id={plan.id}, status={status}")
+    
+    # 加入完了メール送信
+    is_trial = status == "trialing"
+    next_date = trial_end if is_trial else current_period_end
+    next_date_str = next_date.astimezone(JST).strftime("%Y年%m月%d日") if next_date else "-"
+    trial_end_str = trial_end.astimezone(JST).strftime("%Y年%m月%d日") if trial_end else None
+    
+    send_subscription_welcome_email(
+        to_email=user.email,
+        name=f"{user.name_last} {user.name_first}",
+        plan_name=plan.name,
+        plan_price=plan.price,
+        next_billing_date=next_date_str,
+        is_trial=is_trial,
+        trial_end_date=trial_end_str,
+    )
 
 
 def _handle_subscription_updated(db: Session, data: dict, event_id: str):
@@ -259,7 +299,7 @@ def _handle_subscription_deleted(db: Session, data: dict):
 
 
 def _handle_invoice_paid(db: Session, data: dict):
-    """invoice.paid: 請求成功 → past_due から active への復帰 + 初回課金時にtrial_used設定"""
+    """invoice.paid: 請求成功 → past_due から active への復帰 + 初回課金時にtrial_used設定 + 更新完了メール"""
     subscription_id = data.get("subscription")
     if subscription_id:
         subscription_service.handle_invoice_paid(db, subscription_id)
@@ -268,12 +308,33 @@ def _handle_invoice_paid(db: Session, data: dict):
     # (トライアルなしプランからトライアルありプランへの乗り換え防止)
     amount_paid = data.get("amount_paid", 0)
     customer_id = data.get("customer")
+    billing_reason = data.get("billing_reason", "")
+    
     if amount_paid > 0 and customer_id:
         user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
         if user and not user.trial_used:
             user.trial_used = True
             db.commit()
             logger.info(f"初回課金完了: user_id={user.id}, trial_used=True に設定")
+        
+        # 更新完了メール送信（初回以外の請求時）
+        # billing_reason: subscription_cycle（定期更新）, subscription_update（変更時の日割り）
+        if user and subscription_id and billing_reason == "subscription_cycle":
+            sub = db.query(Subscription).filter(
+                Subscription.stripe_subscription_id == subscription_id
+            ).first()
+            if sub:
+                plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+                if plan:
+                    next_date = sub.current_period_end
+                    next_date_str = next_date.astimezone(JST).strftime("%Y年%m月%d日") if next_date else "-"
+                    send_renewal_complete_email(
+                        to_email=user.email,
+                        name=f"{user.name_last} {user.name_first}",
+                        plan_name=plan.name,
+                        amount=amount_paid,
+                        next_billing_date=next_date_str,
+                    )
 
     logger.info(f"請求成功: subscription={subscription_id}, amount_paid={amount_paid}")
 
