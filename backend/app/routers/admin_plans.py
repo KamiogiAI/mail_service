@@ -19,6 +19,25 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/admin/plans", tags=["admin-plans"])
 
 
+def _sync_billing_portal_products(db: Session):
+    """全有効プランをBilling Portalのプラン変更先に同期"""
+    plans = db.query(Plan).filter(
+        Plan.is_active == True,
+        Plan.stripe_product_id.isnot(None),
+        Plan.stripe_price_id.isnot(None),
+    ).all()
+    
+    products = [
+        {"product": p.stripe_product_id, "prices": [p.stripe_price_id]}
+        for p in plans
+    ]
+    
+    try:
+        stripe_service.update_billing_portal_products(products)
+    except Exception as e:
+        logger.warning(f"Billing Portal products同期失敗: {e}")
+
+
 # --- スキーマ ---
 class PlanCreate(BaseModel):
     name: str
@@ -215,6 +234,10 @@ async def create_plan(data: PlanCreate, db: Session = Depends(get_db), _=Depends
     db.add(plan)
     db.commit()
     db.refresh(plan)
+    
+    # Billing Portalのプラン変更先を同期
+    _sync_billing_portal_products(db)
+    
     return {"id": plan.id, "message": "プランを作成しました"}
 
 
@@ -254,6 +277,10 @@ async def update_plan(plan_id: int, data: PlanUpdate, db: Session = Depends(get_
             logger.warning(f"Stripe Product更新失敗 (product_id={plan.stripe_product_id}): {e}")
 
     db.commit()
+    
+    # Billing Portalのプラン変更先を同期（is_active変更時に必要）
+    _sync_billing_portal_products(db)
+    
     return {"message": "プランを更新しました"}
 
 
@@ -289,6 +316,10 @@ async def delete_plan(
                 pass
         
         db.commit()
+        
+        # Billing Portalのプラン変更先を同期（非アクティブ化したプランを除外）
+        _sync_billing_portal_products(db)
+        
         return {"message": "プランの削除を予約しました。全ユーザーの期間終了後に削除されます。"}
     else:
         # 即時削除: 全購読強制解約
@@ -303,6 +334,10 @@ async def delete_plan(
 
         db.delete(plan)
         db.commit()
+        
+        # Billing Portalのプラン変更先を同期（削除したプランを除外）
+        _sync_billing_portal_products(db)
+        
         return {"message": "プランを削除しました"}
 
 

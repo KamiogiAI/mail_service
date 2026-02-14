@@ -294,3 +294,52 @@ def get_subscription_discount_info(subscription_id: str) -> dict:
 def construct_webhook_event(payload: bytes, sig_header: str, secret: str):
     """Webhook イベントを構築・検証"""
     return stripe.Webhook.construct_event(payload, sig_header, secret)
+
+
+def update_billing_portal_products(products: list[dict]) -> bool:
+    """Billing Portal Configurationのプラン変更可能プロダクトを更新
+    
+    Args:
+        products: [{"product": "prod_xxx", "prices": ["price_yyy"]}, ...]
+    
+    Returns:
+        bool: 成功したらTrue
+    """
+    _init_stripe()
+    
+    try:
+        # 既存のConfigurationを取得
+        configs = stripe.billing_portal.Configuration.list(limit=1, is_default=True)
+        
+        features = {
+            "subscription_update": {
+                "enabled": True,
+                "default_allowed_updates": ["price"],
+                "proration_behavior": "create_prorations",
+                "products": products if products else [],
+            },
+            "subscription_cancel": {
+                "enabled": True,
+                "mode": "at_period_end",
+            },
+            "payment_method_update": {"enabled": True},
+            "invoice_history": {"enabled": True},
+        }
+        
+        if configs.data:
+            # 既存のConfigurationを更新
+            config = configs.data[0]
+            stripe.billing_portal.Configuration.modify(config.id, features=features)
+            logger.info(f"Billing Portal products更新: {len(products)}プラン")
+        else:
+            # 新規作成
+            stripe.billing_portal.Configuration.create(
+                features=features,
+                business_profile={"headline": "プランの管理"},
+            )
+            logger.info(f"Billing Portal Configuration新規作成: {len(products)}プラン")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Billing Portal products更新失敗: {e}")
+        return False
