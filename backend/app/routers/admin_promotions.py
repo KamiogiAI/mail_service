@@ -3,8 +3,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel, field_validator
-from datetime import datetime
+from datetime import datetime, time
 import time as time_mod
+
+
+def parse_expires_date(date_str: str) -> datetime:
+    """日付文字列をパース。日付のみの場合は23:59:59を設定"""
+    dt = datetime.fromisoformat(date_str)
+    # 日付のみ（時刻なし）の場合、その日の終わりに設定
+    if dt.hour == 0 and dt.minute == 0 and dt.second == 0 and "T" not in date_str:
+        dt = dt.replace(hour=23, minute=59, second=59)
+    return dt
 
 from app.core.database import get_db
 from app.models.promotion_code import PromotionCode
@@ -43,14 +52,14 @@ class PromotionCodeCreate(BaseModel):
         if v is None:
             return v
         try:
-            expires = datetime.fromisoformat(v)
+            expires = parse_expires_date(v)
             now = datetime.now()
             if expires <= now:
-                raise ValueError("expires_atは未来の日時を指定してください")
+                raise ValueError("expires_atは未来の日付を指定してください")
         except ValueError as e:
             if "expires_at" in str(e):
                 raise
-            raise ValueError("expires_atの日時形式が不正です (ISO形式で指定)")
+            raise ValueError("expires_atの日付形式が不正です (YYYY-MM-DD形式で指定)")
         return v
 
 
@@ -112,9 +121,9 @@ async def create_promotion(
     expires_timestamp = None
     if data.expires_at:
         try:
-            expires_timestamp = int(datetime.fromisoformat(data.expires_at).timestamp())
+            expires_timestamp = int(parse_expires_date(data.expires_at).timestamp())
         except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail="expires_atの日時形式が不正です")
+            raise HTTPException(status_code=400, detail="expires_atの日付形式が不正です")
 
     try:
         promo_id = stripe_service.create_promotion_code(
@@ -134,7 +143,7 @@ async def create_promotion(
         discount_value=data.discount_value,
         max_redemptions=data.max_redemptions,
         eligible_plan_ids=data.eligible_plan_ids,
-        expires_at=datetime.fromisoformat(data.expires_at) if data.expires_at else None,
+        expires_at=parse_expires_date(data.expires_at) if data.expires_at else None,
     )
     db.add(promo)
     db.commit()
