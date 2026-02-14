@@ -27,7 +27,7 @@ const PromotionsPage = {
                     </div>
                     <div class="form-group"><label>割引値</label><input id="promo-value" type="number" min="1"></div>
                     <div class="form-group"><label>最大使用回数 (空欄=無制限)</label><input id="promo-max" type="number" min="1"></div>
-                    <div class="form-group"><label>有効期限</label><input id="promo-expires" type="datetime-local"></div>
+                    <div class="form-group"><label>有効期限</label><input id="promo-expires" type="date"></div>
                     <div class="form-group">
                         <label>適用プラン (未選択=全プラン)</label>
                         <div id="promo-plans-checkboxes" style="margin-top:6px;"></div>
