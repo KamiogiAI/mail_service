@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 @router.get("")
 async def list_public_plans(db: Session = Depends(get_db)):
     """公開プラン一覧 (アクティブのみ)"""
-    plans = db.query(Plan).filter(Plan.is_active == True).order_by(Plan.created_at).all()
+    plans = db.query(Plan).filter(Plan.is_active == True).order_by(Plan.sort_order.asc(), Plan.created_at.desc()).all()
     return [
         {
             "id": p.id,

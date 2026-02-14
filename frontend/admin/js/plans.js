@@ -267,7 +267,10 @@ const PlansPage = {
 
             this.onScheduleTypeChange();
 
-            this.questions = plan.questions || [];
+            this.questions = (plan.questions || []).map(q => ({
+                ...q,
+                options: typeof q.options === 'string' ? JSON.parse(q.options || '[]') : (q.options || [])
+            }));
             this.renderQuestions();
 
             // あらすじ設定
