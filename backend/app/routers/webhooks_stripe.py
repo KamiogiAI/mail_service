@@ -131,8 +131,12 @@ def _handle_checkout_completed(db: Session, data: dict):
         Subscription.stripe_subscription_id == stripe_subscription_id
     ).first()
     if existing:
-        # 既存レコードがincomplete等の場合は正しいステータスに更新
-        if existing.status in ("incomplete", "incomplete_expired"):
+        # 既存レコードがincomplete等、またはcurrent_period_endがNULLの場合は更新
+        needs_update = (
+            existing.status in ("incomplete", "incomplete_expired") or
+            existing.current_period_end is None
+        )
+        if needs_update:
             try:
                 stripe_sub = stripe_service.retrieve_subscription(stripe_subscription_id)
                 if stripe_sub:
@@ -144,7 +148,7 @@ def _handle_checkout_completed(db: Session, data: dict):
                     if stripe_sub.get("current_period_end"):
                         existing.current_period_end = datetime.fromtimestamp(stripe_sub["current_period_end"])
                     db.commit()
-                    logger.info(f"Checkout完了: 既存購読を更新 subscription_id={existing.id}, status={existing.status}")
+                    logger.info(f"Checkout完了: 既存購読を更新 subscription_id={existing.id}, status={existing.status}, period_end={existing.current_period_end}")
             except Exception as e:
                 logger.warning(f"Checkout完了: 既存購読の更新失敗: {e}")
         else:
