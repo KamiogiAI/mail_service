@@ -56,7 +56,18 @@ def _update_progress_heartbeat(db: Session, progress_id: int, cursor: str = None
 
 
 def _has_user_variables(prompt: str, questions: list) -> bool:
-    """プロンプトに質問変数が含まれているか判定"""
+    """プロンプトにユーザー固有の変数が含まれているか判定
+    
+    質問変数だけでなく、組み込みのユーザー変数も考慮する。
+    これらが含まれる場合、ユーザーごとにGPT生成が必要。
+    """
+    # 組み込みユーザー変数をチェック
+    builtin_user_vars = ["{user_name}", "{name_first}", "{name_last}"]
+    for var in builtin_user_vars:
+        if var in prompt:
+            return True
+    
+    # 質問変数をチェック
     if not questions:
         return False
     for q in questions:
@@ -253,8 +264,15 @@ def execute_plan_delivery(
                     all_contents.append((item_name, split_gpt_cache[item_name]))
 
             if not all_contents:
+                # 全分割アイテムでGPT生成失敗
                 fail_count += 1
                 delivery.fail_count = fail_count
+                _create_delivery_item(
+                    db, delivery.id, user,
+                    document_key="batch",
+                    status=3,
+                    error_msg="全分割アイテムでGPT生成失敗",
+                )
                 db.commit()
                 continue
 
@@ -460,6 +478,14 @@ def execute_plan_delivery(
             )
         except Exception as e:
             logger.error(f"GPT生成失敗: {e}")
+            # 全ユーザーのDeliveryItemを失敗で作成
+            for user in users:
+                _create_delivery_item(
+                    db, delivery.id, user,
+                    document_key=None,
+                    status=3,
+                    error_msg=f"GPT生成失敗: {e}",
+                )
             delivery.status = "failed"
             delivery.fail_count = len(users)
             delivery.completed_at = datetime.now(JST)
