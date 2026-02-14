@@ -21,6 +21,7 @@ PAGE_FIELDS = {
     "company": "company_md",
     "cancel": "cancel_md",
     "tokusho": "tokusho_md",
+    "privacy": "privacy_md",
 }
 
 PAGE_TITLES = {
@@ -28,6 +29,7 @@ PAGE_TITLES = {
     "company": "運営会社情報",
     "cancel": "解約ポリシー",
     "tokusho": "特定商取引法に基づく表記",
+    "privacy": "プライバシーポリシー",
 }
 
 
