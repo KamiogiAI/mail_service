@@ -19,10 +19,13 @@ def get_client_ip(request: Request) -> str:
 
 
 # Limiterインスタンス（アプリケーション全体で共有）
+# Redisを使用して分散環境でもレート制限を共有
+from app.core.config import settings
+
 limiter = Limiter(
     key_func=get_client_ip,
     default_limits=["100/minute"],  # デフォルト: 100回/分
-    storage_uri="memory://",  # 本番ではRedisを推奨: "redis://localhost:6379"
+    storage_uri=settings.REDIS_URL,  # Redisを使用
 )
 
 

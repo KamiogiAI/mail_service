@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # セキュリティ
     AES_KEY: str = ""
-    JWT_SECRET: str = "dev-secret-change-me"
+    JWT_SECRET: str = ""  # 本番では必ず強いランダム値を設定
 
     # Stripe
     STRIPE_SECRET_KEY: str = ""

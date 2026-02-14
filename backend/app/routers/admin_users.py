@@ -272,10 +272,11 @@ async def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends
 async def invite_admin(
     data: InviteAdminRequest,
     db: Session = Depends(get_db),
-    r=Depends(lambda: __import__("app.core.redis", fromlist=["get_redis"]).get_redis()),
     _=Depends(require_admin),
 ):
-    """管理者招待 (仮パスワードで作成 → 認証コード送信)"""
+    """管理者招待 (仮パスワードで作成 → メールで通知)"""
+    from app.services.mail_service import send_admin_invite_email
+    
     existing = auth_service.get_user_by_email(db, data.email)
     if existing:
         if existing.role == "admin":
@@ -296,5 +297,13 @@ async def invite_admin(
         name_first=data.name_first,
         role="admin",
     )
+    
+    # 仮パスワードをメールで送信（APIレスポンスには含めない）
+    name = f"{data.name_last} {data.name_first}"
+    if not send_admin_invite_email(data.email, name, temp_password):
+        # メール送信失敗時はユーザーを削除してエラー
+        db.delete(user)
+        db.commit()
+        raise HTTPException(status_code=500, detail="招待メールの送信に失敗しました")
 
-    return {"message": f"管理者を招待しました: {data.email}", "temp_password": temp_password}
+    return {"message": f"管理者を招待しました。仮パスワードをメールで送信しました: {data.email}"}

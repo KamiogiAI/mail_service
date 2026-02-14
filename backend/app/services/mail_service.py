@@ -129,3 +129,34 @@ def send_payment_failed_email(to_email: str, name: str, plan_name: str) -> bool:
     except Exception as e:
         logger.error(f"決済失敗通知メール送信失敗: {to_email} - {e}")
         return False
+
+
+def send_admin_invite_email(to_email: str, name: str, temp_password: str) -> bool:
+    """管理者招待メール送信（仮パスワード通知）"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        login_url = f"{settings.SITE_URL}/admin/login.html"
+        html = f"""
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>{get_site_name()} 管理画面</h2>
+            <p>{name} 様</p>
+            <p>管理者として招待されました。以下の仮パスワードでログインしてください。</p>
+            <div style="background: #f5f5f5; padding: 15px; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 5px 0;"><strong>メールアドレス:</strong> {to_email}</p>
+                <p style="margin: 5px 0;"><strong>仮パスワード:</strong> <code style="background: #fff; padding: 2px 8px;">{temp_password}</code></p>
+            </div>
+            <p style="color: #d93025;"><strong>⚠️ 初回ログイン後、必ずパスワードを変更してください。</strong></p>
+            <p><a href="{login_url}" style="display: inline-block; background: #4285f4; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">管理画面にログイン</a></p>
+        </div>
+        """
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": f"【{get_site_name()}】管理者招待のお知らせ",
+            "html": html,
+        })
+        logger.info(f"管理者招待メール送信: {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"管理者招待メール送信失敗: {to_email} - {e}")
+        return False

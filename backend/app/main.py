@@ -23,6 +23,13 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     """アプリケーションライフサイクル管理"""
     setup_logging(debug=settings.DEBUG)
+    
+    # 必須設定値のチェック
+    if not settings.JWT_SECRET or settings.JWT_SECRET == "dev-secret-change-me":
+        raise RuntimeError("JWT_SECRET が設定されていません。.envファイルで強いランダム値を設定してください。")
+    if len(settings.JWT_SECRET) < 32:
+        raise RuntimeError("JWT_SECRET は32文字以上の強い値を設定してください。")
+    
     logger.info("アプリケーション起動")
     yield
     logger.info("アプリケーション終了")
