@@ -52,12 +52,16 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
     total_active_subs = sum(sub_counts.values())
     trialing_subs = sub_counts.get("trialing", 0)
 
-    # --- 月額売上 (admin_added は支払いなしなので除外) ---
+    # --- 月額売上 (admin_added は支払いなしなので除外、無効化ユーザーも除外) ---
     PAID_STATUSES = ("trialing", "active", "past_due")
     revenue_rows = (
         db.query(Plan.price, sa_func.count(Subscription.id))
         .join(Subscription, Subscription.plan_id == Plan.id)
-        .filter(Subscription.status.in_(PAID_STATUSES))
+        .join(User, Subscription.user_id == User.id)
+        .filter(
+            Subscription.status.in_(PAID_STATUSES),
+            User.is_active == True,
+        )
         .group_by(Plan.id)
         .all()
     )
