@@ -93,11 +93,15 @@ async def subscribe(
 
     # Stripe Customer作成 (未作成の場合)
     if not user.stripe_customer_id:
-        customer_id = stripe_service.create_customer(
-            email=user.email,
-            name=f"{user.name_last} {user.name_first}",
-            metadata={"user_id": str(user.id), "member_no": user.member_no},
-        )
+        try:
+            customer_id = stripe_service.create_customer(
+                email=user.email,
+                name=f"{user.name_last} {user.name_first}",
+                metadata={"user_id": str(user.id), "member_no": user.member_no},
+            )
+        except Exception as e:
+            logger.error(f"Stripe Customer作成失敗: user_id={user.id}, error={e}")
+            raise HTTPException(status_code=500, detail="決済システムとの連携に失敗しました")
         user.stripe_customer_id = customer_id
         db.commit()
 
@@ -112,20 +116,24 @@ async def subscribe(
         f"{settings.SITE_URL}/user/subscribe.html?plan_id={plan.id}"
     )
 
-    checkout_url = stripe_service.create_checkout_session(
-        price_id=plan.stripe_price_id,
-        customer_id=user.stripe_customer_id,
-        customer_email=None,
-        trial_days=trial_days,
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={
-            "user_id": str(user.id),
-            "plan_id": str(plan.id),
-            "member_no": user.member_no,
-        },
-        stripe_promotion_code_id=stripe_promotion_code_id,
-    )
+    try:
+        checkout_url = stripe_service.create_checkout_session(
+            price_id=plan.stripe_price_id,
+            customer_id=user.stripe_customer_id,
+            customer_email=None,
+            trial_days=trial_days,
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "user_id": str(user.id),
+                "plan_id": str(plan.id),
+                "member_no": user.member_no,
+            },
+            stripe_promotion_code_id=stripe_promotion_code_id,
+        )
+    except Exception as e:
+        logger.error(f"Stripe Checkout Session作成失敗: user_id={user.id}, plan_id={plan.id}, error={e}")
+        raise HTTPException(status_code=500, detail="決済ページの作成に失敗しました")
 
     return {"checkout_url": checkout_url}
 
@@ -225,7 +233,11 @@ async def billing_portal(
         raise HTTPException(status_code=400, detail="決済情報が見つかりません")
 
     return_url = req.return_url or f"{settings.SITE_URL}/user/mypage.html"
-    url = stripe_service.create_billing_portal_session(user.stripe_customer_id, return_url)
+    try:
+        url = stripe_service.create_billing_portal_session(user.stripe_customer_id, return_url)
+    except Exception as e:
+        logger.error(f"Stripe Billing Portal作成失敗: user_id={user.stripe_customer_id}, error={e}")
+        raise HTTPException(status_code=500, detail="決済ポータルの作成に失敗しました")
     return {"portal_url": url}
 
 
@@ -303,7 +315,11 @@ async def cancel_subscription(
         raise HTTPException(status_code=404, detail="購読が見つかりません")
 
     if sub.stripe_subscription_id:
-        stripe_service.cancel_subscription(sub.stripe_subscription_id, at_period_end=True)
+        try:
+            stripe_service.cancel_subscription(sub.stripe_subscription_id, at_period_end=True)
+        except Exception as e:
+            logger.error(f"Stripe購読解約失敗: subscription_id={sub.stripe_subscription_id}, error={e}")
+            raise HTTPException(status_code=500, detail="解約処理に失敗しました")
     sub.cancel_at_period_end = True
     db.commit()
 
