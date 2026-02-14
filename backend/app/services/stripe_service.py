@@ -343,7 +343,7 @@ def update_billing_portal_products(products: list[dict]) -> bool:
         if products:
             subscription_update = {
                 "enabled": True,
-                "default_allowed_updates": ["price"],
+                "default_allowed_updates": ["price", "promotion_code"],
                 "proration_behavior": "create_prorations",
                 "products": products,
             }
