@@ -16,6 +16,7 @@ from app.models.user import User
 from app.models.plan import Plan
 from app.models.subscription import Subscription
 from app.models.processed_stripe_event import ProcessedStripeEvent
+from app.models.promotion_code import PromotionCode
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -181,6 +182,29 @@ def _handle_checkout_completed(db: Session, data: dict):
     )
 
     logger.info(f"Checkout完了: user_id={user_id}, plan_id={plan_id}, status={status}")
+
+    # プロモーションコード使用数を更新
+    try:
+        # Checkout Sessionのdiscounts配列からpromotion_codeを取得
+        discounts = data.get("discounts", []) or []
+        # または単一のdiscount
+        if not discounts and data.get("discount"):
+            discount = data.get("discount", {})
+            if discount.get("promotion_code"):
+                discounts = [{"promotion_code": discount["promotion_code"]}]
+        
+        for discount_item in discounts:
+            promo_code_id = discount_item.get("promotion_code")
+            if promo_code_id:
+                promo = db.query(PromotionCode).filter(
+                    PromotionCode.stripe_promotion_code_id == promo_code_id
+                ).first()
+                if promo:
+                    promo.times_redeemed = (promo.times_redeemed or 0) + 1
+                    db.commit()
+                    logger.info(f"プロモーションコード使用: code={promo.code}, times_redeemed={promo.times_redeemed}")
+    except Exception as e:
+        logger.warning(f"プロモーションコード使用数更新失敗: {e}")
     
     # 加入完了メール送信
     if user and plan:
