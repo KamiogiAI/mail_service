@@ -409,6 +409,14 @@ def handle_subscription_deleted(db: Session, stripe_subscription_id: str):
 
         logger.info(f"購読終了前にダウングレード適用: subscription_id={sub.id}, {old_plan_id} → {new_plan_id}")
 
+    # プラン削除予約によるキャンセルの場合、終了メールを送信
+    plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+    if plan and plan.pending_delete and sub.user_id:
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        if user:
+            send_subscription_cancel_email(user.email, f"{user.name_last} {user.name_first}", plan.name)
+            logger.info(f"プラン終了メール送信: user_id={user.id}, plan={plan.name}")
+
     sub.status = "canceled"
     sub.scheduled_plan_id = None
     sub.scheduled_change_at = None
@@ -444,6 +452,38 @@ def force_cancel_plan_subscriptions(db: Session, plan_id: int):
                 send_subscription_cancel_email(user.email, f"{user.name_last} {user.name_first}", plan.name)
 
     db.commit()
+
+
+def schedule_cancel_plan_subscriptions(db: Session, plan_id: int):
+    """プラン削除予約時: 全加入者の購読を解約予約（期間終了時にキャンセル）"""
+    import time
+    
+    subs = db.query(Subscription).filter(
+        Subscription.plan_id == plan_id,
+        Subscription.status.in_(["trialing", "active", "past_due"]),
+        Subscription.stripe_subscription_id != None,
+    ).all()
+
+    for sub in subs:
+        try:
+            stripe_service.cancel_subscription(sub.stripe_subscription_id, at_period_end=True)
+            sub.cancel_at_period_end = True
+        except Exception as e:
+            logger.error(f"Stripe購読解約予約失敗: {sub.stripe_subscription_id} - {e}")
+        
+        # Resendレート制限対策: 少し間隔を空ける
+        time.sleep(0.5)
+
+    # admin_addedはStripe連携なしなので、即座にキャンセル扱い
+    admin_subs = db.query(Subscription).filter(
+        Subscription.plan_id == plan_id,
+        Subscription.status == "admin_added",
+    ).all()
+    for sub in admin_subs:
+        sub.status = "canceled"
+
+    db.commit()
+    logger.info(f"プラン削除予約: plan_id={plan_id}, 解約予約={len(subs)}件, admin_added即時終了={len(admin_subs)}件")
 
 
 def handle_payment_failed(db: Session, stripe_subscription_id: str):

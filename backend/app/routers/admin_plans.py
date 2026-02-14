@@ -258,25 +258,52 @@ async def update_plan(plan_id: int, data: PlanUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{plan_id}")
-async def delete_plan(plan_id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
-    """プラン削除 (加入者がいても削除可能 → 全購読強制解約)"""
+async def delete_plan(
+    plan_id: int,
+    at_period_end: bool = False,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """プラン削除
+    
+    at_period_end=False: 即時削除（全購読強制解約）
+    at_period_end=True: 期間終了後に削除（解約予約）
+    """
     plan = db.query(Plan).filter(Plan.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="プランが見つかりません")
 
-    # 全購読を強制解約
-    subscription_service.force_cancel_plan_subscriptions(db, plan_id)
+    if at_period_end:
+        # 期間終了後に削除: プランを非表示化＆削除予約
+        plan.is_active = False
+        plan.pending_delete = True
+        
+        # 全購読を解約予約（期間終了時にキャンセル）
+        subscription_service.schedule_cancel_plan_subscriptions(db, plan_id)
+        
+        # Stripe Product アーカイブ（新規加入不可に）
+        if plan.stripe_product_id:
+            try:
+                stripe_service.archive_product(plan.stripe_product_id)
+            except Exception:
+                pass
+        
+        db.commit()
+        return {"message": "プランの削除を予約しました。全ユーザーの期間終了後に削除されます。"}
+    else:
+        # 即時削除: 全購読強制解約
+        subscription_service.force_cancel_plan_subscriptions(db, plan_id)
 
-    # Stripe Product アーカイブ
-    if plan.stripe_product_id:
-        try:
-            stripe_service.archive_product(plan.stripe_product_id)
-        except Exception:
-            pass
+        # Stripe Product アーカイブ
+        if plan.stripe_product_id:
+            try:
+                stripe_service.archive_product(plan.stripe_product_id)
+            except Exception:
+                pass
 
-    db.delete(plan)
-    db.commit()
-    return {"message": "プランを削除しました"}
+        db.delete(plan)
+        db.commit()
+        return {"message": "プランを削除しました"}
 
 
 # --- 質問項目 ---

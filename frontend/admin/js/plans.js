@@ -564,9 +564,53 @@ const PlansPage = {
     },
 
     async deletePlan(id, name) {
-        if (!confirm(`プラン「${name}」を削除しますか？\n加入者がいる場合、全購読が強制解約されます。`)) return;
+        // カスタム削除ダイアログを表示
+        this.showDeleteDialog(id, name);
+    },
+
+    showDeleteDialog(id, name) {
+        // 既存のダイアログがあれば削除
+        const existing = document.getElementById('plan-delete-dialog');
+        if (existing) existing.remove();
+
+        const dialog = document.createElement('div');
+        dialog.id = 'plan-delete-dialog';
+        dialog.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
+        dialog.innerHTML = `
+            <div style="background:#fff;padding:24px;border-radius:12px;max-width:450px;width:90%;">
+                <h3 style="margin:0 0 16px;font-size:18px;">プラン「${this.esc(name)}」を削除</h3>
+                <div style="margin-bottom:16px;">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                        <input type="checkbox" id="delete-at-period-end" style="width:18px;height:18px;">
+                        <span>全員の期間終了後に削除する</span>
+                    </label>
+                    <p style="margin:8px 0 0 26px;font-size:13px;color:#666;">
+                        チェックあり: 解約予約 → 各ユーザーの期間終了後に順次終了<br>
+                        チェックなし: 即時削除 → 全購読を強制解約（返金なし）
+                    </p>
+                </div>
+                <div style="display:flex;gap:12px;justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="PlansPage.closeDeleteDialog()">キャンセル</button>
+                    <button class="btn btn-danger" onclick="PlansPage.confirmDelete(${id})">削除する</button>
+                </div>
+            </div>
+        `;
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) this.closeDeleteDialog();
+        });
+        document.body.appendChild(dialog);
+    },
+
+    closeDeleteDialog() {
+        const dialog = document.getElementById('plan-delete-dialog');
+        if (dialog) dialog.remove();
+    },
+
+    async confirmDelete(id) {
+        const atPeriodEnd = document.getElementById('delete-at-period-end')?.checked || false;
+        this.closeDeleteDialog();
         try {
-            await API.del(`/api/admin/plans/${id}`);
+            await API.del(`/api/admin/plans/${id}?at_period_end=${atPeriodEnd}`);
             await this.loadPlans();
         } catch (e) {
             alert(e.message);

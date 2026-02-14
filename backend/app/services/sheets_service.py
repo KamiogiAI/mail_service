@@ -127,8 +127,10 @@ def test_sheets_connection(
         }
 
     except Exception as e:
-        logger.error(f"Sheets接続テストエラー: {sheets_id} - {e}")
-        return {"ok": False, "error": str(e)}
+        import traceback
+        error_detail = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        logger.error(f"Sheets接続テストエラー: {sheets_id} - {error_detail}")
+        return {"ok": False, "error": str(e) or repr(e)}
 
 
 def _parse_date(value: str) -> date:

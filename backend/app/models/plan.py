@@ -39,5 +39,8 @@ class Plan(Base):
     # 初月無料
     trial_enabled = Column(Boolean, nullable=False, default=True, comment="初月無料トライアルを有効にする")
 
+    # 削除予約
+    pending_delete = Column(Boolean, nullable=False, default=False, comment="削除予約フラグ")
+
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

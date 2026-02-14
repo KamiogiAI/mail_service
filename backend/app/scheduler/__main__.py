@@ -164,6 +164,15 @@ def main():
         max_instances=1,
     )
 
+    # 毎時0分: 削除予約プランのクリーンアップ
+    from app.scheduler.pending_plan_cleaner import cleanup_pending_delete_plans
+    scheduler.add_job(
+        cleanup_pending_delete_plans,
+        CronTrigger(minute=0, timezone="Asia/Tokyo"),
+        id="pending_plan_cleaner",
+        max_instances=1,
+    )
+
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
