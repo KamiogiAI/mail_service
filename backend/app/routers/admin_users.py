@@ -161,7 +161,7 @@ async def toggle_active(user_id: int, db: Session = Depends(get_db), _=Depends(r
     if user.role == "admin" and user.is_active:
         raise HTTPException(status_code=400, detail="管理者アカウントは無効化できません")
 
-    # 無効化する場合、Stripeサブスクリプションをキャンセル
+    # 無効化する場合、Stripeサブスクリプションをキャンセル予約
     if user.is_active:
         subs = db.query(Subscription).filter(
             Subscription.user_id == user_id,
@@ -174,6 +174,20 @@ async def toggle_active(user_id: int, db: Session = Depends(get_db), _=Depends(r
                 sub.cancel_at_period_end = True
             except Exception:
                 pass  # Stripe側で既にキャンセル済みの場合など
+    else:
+        # 有効化する場合、キャンセル予約を解除
+        subs = db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.status.in_(("trialing", "active", "past_due")),
+            Subscription.stripe_subscription_id != None,
+            Subscription.cancel_at_period_end == True,
+        ).all()
+        for sub in subs:
+            try:
+                stripe_service.resume_subscription(sub.stripe_subscription_id)
+                sub.cancel_at_period_end = False
+            except Exception:
+                pass  # Stripe側でエラーの場合
 
     user.is_active = not user.is_active
     db.commit()
