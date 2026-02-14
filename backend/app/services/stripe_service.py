@@ -89,78 +89,109 @@ def create_customer(email: str, name: str, metadata: dict = None) -> str:
     return customer.id
 
 
-def _get_or_create_portal_configuration() -> str:
-    """Billing Portal Configuration を取得または作成"""
+# Billing Portal Configuration IDのキャッシュ
+_portal_config_cache = {
+    "trial": None,      # トライアル用（プラン変更無効）
+    "normal": None,     # 通常用（プラン変更有効、日割りあり）
+}
+
+
+def _get_or_create_portal_configurations() -> dict:
+    """Billing Portal Configuration を取得または作成（トライアル用/通常用の2種類）
+    
+    Returns:
+        {"trial": config_id, "normal": config_id}
+    """
+    global _portal_config_cache
     _init_stripe()
     
-    # 既存のConfigurationを取得
-    configs = stripe.billing_portal.Configuration.list(limit=1, is_default=True)
-    if configs.data:
-        config = configs.data[0]
-        # proration_behaviorが正しく設定されているか確認
-        sub_update = config.features.get("subscription_update", {})
-        if sub_update.get("proration_behavior") == "create_prorations":
-            return config.id
-        
-        # 設定が異なる場合は更新
-        try:
-            stripe.billing_portal.Configuration.modify(
-                config.id,
-                features={
-                    "subscription_update": {
-                        "enabled": True,
-                        "default_allowed_updates": ["price"],
-                        "proration_behavior": "create_prorations",
-                    },
-                    "subscription_cancel": {
-                        "enabled": True,
-                        "mode": "at_period_end",
-                    },
-                    "payment_method_update": {"enabled": True},
-                    "invoice_history": {"enabled": True},
-                },
-            )
-            logger.info(f"Billing Portal Configuration更新: {config.id}")
-            return config.id
-        except Exception as e:
-            logger.warning(f"Configuration更新失敗: {e}")
-            return config.id
+    # キャッシュがあればそれを返す
+    if _portal_config_cache["trial"] and _portal_config_cache["normal"]:
+        return _portal_config_cache
     
-    # 新規作成
-    config = stripe.billing_portal.Configuration.create(
-        features={
+    # 共通設定
+    base_features = {
+        "subscription_cancel": {
+            "enabled": True,
+            "mode": "at_period_end",
+        },
+        "payment_method_update": {"enabled": True},
+        "invoice_history": {"enabled": True},
+    }
+    
+    # 既存のConfigurationを取得
+    configs = stripe.billing_portal.Configuration.list(limit=10)
+    
+    trial_config_id = None
+    normal_config_id = None
+    
+    for config in configs.data:
+        sub_update = config.features.subscription_update
+        headline = getattr(config.business_profile, 'headline', '') if config.business_profile else ''
+        
+        if headline == "プランの管理（トライアル中）":
+            trial_config_id = config.id
+        elif headline == "プランの管理":
+            # プラン変更が有効で日割りありなら通常用
+            if sub_update.enabled and getattr(sub_update, 'proration_behavior', None) == "create_prorations":
+                normal_config_id = config.id
+    
+    # トライアル用がなければ作成
+    if not trial_config_id:
+        trial_features = {
+            **base_features,
+            "subscription_update": {"enabled": False},
+        }
+        config = stripe.billing_portal.Configuration.create(
+            features=trial_features,
+            business_profile={"headline": "プランの管理（トライアル中）"},
+        )
+        trial_config_id = config.id
+        logger.info(f"Billing Portal Configuration作成（トライアル用）: {config.id}")
+    
+    # 通常用がなければ作成
+    if not normal_config_id:
+        normal_features = {
+            **base_features,
             "subscription_update": {
                 "enabled": True,
                 "default_allowed_updates": ["price"],
                 "proration_behavior": "create_prorations",
             },
-            "subscription_cancel": {
-                "enabled": True,
-                "mode": "at_period_end",
-            },
-            "payment_method_update": {"enabled": True},
-            "invoice_history": {"enabled": True},
-        },
-        business_profile={
-            "headline": "プランの管理",
-        },
-    )
-    logger.info(f"Billing Portal Configuration作成: {config.id}")
-    return config.id
+        }
+        config = stripe.billing_portal.Configuration.create(
+            features=normal_features,
+            business_profile={"headline": "プランの管理"},
+        )
+        normal_config_id = config.id
+        logger.info(f"Billing Portal Configuration作成（通常用）: {config.id}")
+    
+    _portal_config_cache["trial"] = trial_config_id
+    _portal_config_cache["normal"] = normal_config_id
+    
+    return _portal_config_cache
 
 
-def create_billing_portal_session(customer_id: str, return_url: str) -> str:
-    """Billing Portal Session を作成し URL を返す"""
+def create_billing_portal_session(customer_id: str, return_url: str, is_trial: bool = False) -> str:
+    """Billing Portal Session を作成し URL を返す
+    
+    Args:
+        customer_id: Stripe Customer ID
+        return_url: ポータルから戻るURL
+        is_trial: トライアル中かどうか（Trueならプラン変更無効）
+    """
     _init_stripe()
     
-    # proration設定済みのConfigurationを使用
-    config_id = _get_or_create_portal_configuration()
+    configs = _get_or_create_portal_configurations()
+    config_id = configs["trial"] if is_trial else configs["normal"]
     
     session = stripe.billing_portal.Session.create(
         customer=customer_id,
         return_url=return_url,
         configuration=config_id,
     )
+    
+    logger.info(f"Billing Portal Session作成: customer={customer_id}, is_trial={is_trial}")
     return session.url
 
 
@@ -297,7 +328,7 @@ def construct_webhook_event(payload: bytes, sig_header: str, secret: str):
 
 
 def update_billing_portal_products(products: list[dict]) -> bool:
-    """Billing Portal Configurationのプラン変更可能プロダクトを更新
+    """Billing Portal Configuration（通常用）のプラン変更可能プロダクトを更新
     
     Args:
         products: [{"product": "prod_xxx", "prices": ["price_yyy"]}, ...]
@@ -308,8 +339,9 @@ def update_billing_portal_products(products: list[dict]) -> bool:
     _init_stripe()
     
     try:
-        # 既存のConfigurationを取得
-        configs = stripe.billing_portal.Configuration.list(limit=1, is_default=True)
+        # 通常用Configurationを取得または作成
+        configs = _get_or_create_portal_configurations()
+        normal_config_id = configs["normal"]
         
         features = {
             "subscription_update": {
@@ -326,18 +358,8 @@ def update_billing_portal_products(products: list[dict]) -> bool:
             "invoice_history": {"enabled": True},
         }
         
-        if configs.data:
-            # 既存のConfigurationを更新
-            config = configs.data[0]
-            stripe.billing_portal.Configuration.modify(config.id, features=features)
-            logger.info(f"Billing Portal products更新: {len(products)}プラン")
-        else:
-            # 新規作成
-            stripe.billing_portal.Configuration.create(
-                features=features,
-                business_profile={"headline": "プランの管理"},
-            )
-            logger.info(f"Billing Portal Configuration新規作成: {len(products)}プラン")
+        stripe.billing_portal.Configuration.modify(normal_config_id, features=features)
+        logger.info(f"Billing Portal products更新（通常用）: {len(products)}プラン")
         
         return True
     except Exception as e:

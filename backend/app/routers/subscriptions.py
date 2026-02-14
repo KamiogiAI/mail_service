@@ -227,14 +227,26 @@ async def checkout_complete(
 async def billing_portal(
     req: BillingPortalRequest,
     user: User = Depends(require_login),
+    db: Session = Depends(get_db),
 ):
-    """Stripe Billing Portal"""
+    """Stripe Billing Portal
+    
+    トライアル中のユーザーはプラン変更が無効なポータルを表示
+    """
     if not user.stripe_customer_id:
         raise HTTPException(status_code=400, detail="決済情報が見つかりません")
 
+    # トライアル中かどうかを確認
+    is_trial = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.status == "trialing",
+    ).first() is not None
+
     return_url = req.return_url or f"{settings.SITE_URL}/user/mypage.html"
     try:
-        url = stripe_service.create_billing_portal_session(user.stripe_customer_id, return_url)
+        url = stripe_service.create_billing_portal_session(
+            user.stripe_customer_id, return_url, is_trial=is_trial
+        )
     except Exception as e:
         logger.error(f"Stripe Billing Portal作成失敗: user_id={user.stripe_customer_id}, error={e}")
         raise HTTPException(status_code=500, detail="決済ポータルの作成に失敗しました")
