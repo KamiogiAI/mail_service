@@ -173,20 +173,9 @@ const ManualSendPage = {
         input.disabled = true;
         
         try {
-            // IDか会員番号かを判定して検索
-            const isNumeric = /^\d+$/.test(value);
-            let user = null;
-            
-            if (isNumeric && value.length <= 5) {
-                // 短い数字はuser_idとして検索
-                user = await API.get(`/api/admin/users/${value}`);
-            } else {
-                // 会員番号として検索
-                const users = await API.get(`/api/admin/users?search=${encodeURIComponent(value)}&per_page=1`);
-                if (users.users && users.users.length > 0) {
-                    user = users.users[0];
-                }
-            }
+            // 会員番号・メール・名前で検索
+            const users = await API.get(`/api/admin/users?search=${encodeURIComponent(value)}&per_page=1`);
+            const user = (users.users && users.users.length > 0) ? users.users[0] : null;
             
             if (user && !this.selectedUsers.find(u => u.id === user.id)) {
                 this.selectedUsers.push({
