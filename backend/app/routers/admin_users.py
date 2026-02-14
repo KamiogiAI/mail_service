@@ -286,7 +286,7 @@ async def invite_admin(
         db.commit()
         return {"message": f"{data.email} を管理者に昇格しました"}
 
-    # 仮パスワードで新規作成
+    # 仮パスワードで新規作成（メール送信で所有確認済みとして認証完了状態で作成）
     import secrets
     temp_password = secrets.token_urlsafe(16)
     user = auth_service.create_user(
@@ -296,6 +296,7 @@ async def invite_admin(
         name_last=data.name_last,
         name_first=data.name_first,
         role="admin",
+        email_verified=True,
     )
     
     # 仮パスワードをメールで送信（APIレスポンスには含めない）
