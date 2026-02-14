@@ -100,7 +100,7 @@ class TestSheetsRequest(BaseModel):
 @router.get("")
 async def list_plans(db: Session = Depends(get_db), _=Depends(require_admin)):
     """プラン一覧"""
-    plans = db.query(Plan).order_by(Plan.created_at.desc()).all()
+    plans = db.query(Plan).order_by(Plan.sort_order.asc(), Plan.created_at.desc()).all()
     result = []
     for p in plans:
         from app.models.subscription import Subscription
@@ -122,9 +122,25 @@ async def list_plans(db: Session = Depends(get_db), _=Depends(require_admin)):
             "batch_send_enabled": p.batch_send_enabled,
             "trial_enabled": p.trial_enabled,
             "subscriber_count": sub_count,
+            "sort_order": p.sort_order,
             "created_at": p.created_at.isoformat() if p.created_at else None,
         })
     return result
+
+
+class ReorderPlansRequest(BaseModel):
+    plan_ids: list[int]  # 並び順に並んだプランIDのリスト
+
+
+@router.post("/reorder")
+async def reorder_plans(req: ReorderPlansRequest, db: Session = Depends(get_db), _=Depends(require_admin)):
+    """プランの並び順を更新"""
+    for i, plan_id in enumerate(req.plan_ids):
+        plan = db.query(Plan).filter(Plan.id == plan_id).first()
+        if plan:
+            plan.sort_order = i
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/{plan_id}")

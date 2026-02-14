@@ -14,12 +14,14 @@ const PlansPage = {
         await this.loadPlans();
     },
 
+    plans: [], // 現在のプラン一覧
+
     async loadPlans() {
         try {
-            const plans = await API.get('/api/admin/plans');
+            this.plans = await API.get('/api/admin/plans');
             const el = document.getElementById('plans-list');
             el.classList.remove('loading');
-            if (plans.length === 0) {
+            if (this.plans.length === 0) {
                 el.innerHTML = '<p>プランがありません</p>';
                 return;
             }
@@ -27,12 +29,16 @@ const PlansPage = {
                 <div class="table-container">
                 <table>
                     <thead><tr>
-                        <th>プラン名</th><th>料金</th><th>配信タイプ</th><th>配信時刻</th>
+                        <th style="width:60px;">順序</th><th>プラン名</th><th>料金</th><th>配信タイプ</th><th>配信時刻</th>
                         <th>モデル</th><th>加入者</th><th>状態</th><th>操作</th>
                     </tr></thead>
                     <tbody>
-                    ${plans.map(p => `
-                        <tr>
+                    ${this.plans.map((p, i) => `
+                        <tr data-plan-id="${p.id}">
+                            <td style="white-space:nowrap;">
+                                <button class="btn btn-sm" onclick="PlansPage.moveUp(${i})" ${i === 0 ? 'disabled' : ''}>↑</button>
+                                <button class="btn btn-sm" onclick="PlansPage.moveDown(${i})" ${i === this.plans.length - 1 ? 'disabled' : ''}>↓</button>
+                            </td>
                             <td>${this.esc(p.name)}</td>
                             <td>¥${p.price.toLocaleString()}/月</td>
                             <td>${p.schedule_type}</td>
@@ -52,6 +58,32 @@ const PlansPage = {
             `;
         } catch (e) {
             document.getElementById('plans-list').innerHTML = `<p class="error-message">${e.message}</p>`;
+        }
+    },
+
+    async moveUp(index) {
+        if (index <= 0) return;
+        const temp = this.plans[index];
+        this.plans[index] = this.plans[index - 1];
+        this.plans[index - 1] = temp;
+        await this.saveOrder();
+    },
+
+    async moveDown(index) {
+        if (index >= this.plans.length - 1) return;
+        const temp = this.plans[index];
+        this.plans[index] = this.plans[index + 1];
+        this.plans[index + 1] = temp;
+        await this.saveOrder();
+    },
+
+    async saveOrder() {
+        try {
+            const plan_ids = this.plans.map(p => p.id);
+            await API.post('/api/admin/plans/reorder', { plan_ids });
+            await this.loadPlans();
+        } catch (e) {
+            alert('並び順の保存に失敗しました: ' + e.message);
         }
     },
 
