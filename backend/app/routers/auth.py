@@ -25,7 +25,7 @@ from app.schemas.auth import (
     UserInfo,
 )
 from app.services import auth_service
-from app.services.mail_service import send_verify_code_email, send_password_reset_email
+from app.services.mail_service import send_verify_code_email, send_password_reset_email, send_welcome_email
 from app.services.email_utils import normalize_email, validate_email_for_registration
 from app.routers.deps import get_current_user, require_login
 
@@ -90,6 +90,12 @@ async def verify_email(
         raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
     user.email_verified = True
     db.commit()
+
+    # ウェルカムメール送信
+    send_welcome_email(
+        to_email=user.email,
+        name=f"{user.name_last} {user.name_first}",
+    )
 
     # セッション作成
     session_id = await create_session(r, user.id, user.role, user.member_no, user.email)
