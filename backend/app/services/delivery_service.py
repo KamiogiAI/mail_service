@@ -55,6 +55,16 @@ def _update_progress_heartbeat(db: Session, progress_id: int, cursor: str = None
         logger.warning(f"Heartbeat更新失敗: {e}")
 
 
+def _has_user_variables(prompt: str, questions: list) -> bool:
+    """プロンプトに質問変数が含まれているか判定"""
+    if not questions:
+        return False
+    for q in questions:
+        if "{" + q.var_name + "}" in prompt:
+            return True
+    return False
+
+
 def execute_plan_delivery(
     db: Session,
     plan: Plan,
@@ -70,6 +80,21 @@ def execute_plan_delivery(
     プランの配信を実行する。
 
     target_user_id: 指定時は単体送信
+    
+    配信パターン:
+    ============
+    
+    【まとめて送信OFF】
+    - 質問なし + 外部データなし     → 5件, GPT 1回 (全員同じ内容)
+    - 質問なし + 外部データあり     → 5件, GPT 1回 (全員同じ内容)
+    - 質問なし + 外部データ分割あり → 15件, GPT 3回 (分割×ユーザー)
+    - 質問あり + 外部データなし     → 5件, GPT 5回 (ユーザーごと)
+    - 質問あり + 外部データあり     → 5件, GPT 5回 (ユーザーごと)
+    - 質問あり + 外部データ分割あり → 15件, GPT 15回 (分割×ユーザー)
+    
+    【まとめて送信ON】（外部データ分割ありの時のみ効果あり）
+    - 質問なし + 外部データ分割あり → 5件, GPT 3回 (分割を1メールにまとめる)
+    - 質問あり + 外部データ分割あり → 5件, GPT 15回 (分割を1メールにまとめる)
     """
     # 対象ユーザー取得
     users = _get_target_users(db, plan.id, target_user_id)
@@ -116,12 +141,19 @@ def execute_plan_delivery(
     if stale:
         db.commit()
 
+    # 配信件数を計算（total_count）
+    if split_items and not plan.batch_send_enabled:
+        # 分割あり + まとめてOFF → 分割×ユーザー
+        total_count = len(split_items) * len(users)
+    else:
+        total_count = len(users)
+
     # Delivery レコード作成
     delivery = Delivery(
         plan_id=plan.id,
         send_type=send_type,
         status="running",
-        total_count=len(users),
+        total_count=total_count,
         started_at=datetime.now(JST),
     )
     db.add(delivery)
@@ -147,118 +179,228 @@ def execute_plan_delivery(
 
     prompt = prompt_override or plan.prompt
     summary_setting = get_summary_setting(db, plan.id)
-
-    # batch_send: 外部データ有効 かつ 分割パス使用
-    is_batch = plan.batch_send_enabled and split_items
-
-    # バッチモードで質問変数が含まれているか判定
-    has_user_vars = False
-    if is_batch and questions:
-        for q in questions:
-            if "{" + q.var_name + "}" in prompt:
-                has_user_vars = True
-                break
+    has_user_vars = _has_user_variables(prompt, questions)
+    has_split_data = bool(split_items)
 
     success_count = 0
     fail_count = 0
 
-    if is_batch and has_user_vars:
-        # ハイブリッド送信: 外部データ＋質問変数 → ユーザーごとにGPT生成
-        for item_name, item_data in split_items:
-            for user in users:
-                user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
-                answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
-
-                user_prompt = prompt
-                if summary_setting:
-                    summaries = get_recent_summaries(
-                        db, plan.id, user.id, summary_setting.summary_inject_count
-                    )
-                    user_prompt = inject_summaries_into_prompt(user_prompt, summaries)
-
-                resolved_prompt = resolve_variables(
-                    text=user_prompt,
-                    external_data=item_data,
-                    item_name=item_name,
-                    answers=answers_dict,
-                    user_name=f"{user.name_last} {user.name_first}",
-                    name_last=user.name_last,
-                    name_first=user.name_first,
-                )
-
-                ok = _send_with_retry(
-                    db=db,
-                    delivery=delivery,
-                    plan=plan,
-                    user=user,
-                    resolved_prompt=resolved_prompt,
-                    document_key=item_name,
-                    summary_setting=summary_setting,
-                    api_key=api_key,
-                )
-                if ok:
-                    success_count += 1
-                    delivery.success_count = success_count
-                else:
-                    fail_count += 1
-                    delivery.fail_count = fail_count
-                db.commit()
-
-                # Heartbeat更新（Watchdog対策）
-                if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
-                    _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
-
-                time.sleep(throttle_seconds)
-
-    elif is_batch:
-        # まとめて送信: 分割アイテムごとに1回GPT → 全ユーザーに同一本文
-        for item_name, item_data in split_items:
-            batch_prompt = resolve_variables(
-                text=prompt,
-                external_data=item_data,
-                item_name=item_name,
-            )
-
-            try:
-                gpt_result = generate_email_content(
-                    prompt=batch_prompt, model=plan.model,
-                    system_prompt=plan.system_prompt, api_key=api_key,
-                )
-            except Exception as e:
-                logger.error(f"GPT生成失敗 (batch item={item_name}): {e}")
-                continue
-
-            for user in users:
-                ok = _send_email_with_retry(
-                    db=db,
-                    delivery=delivery,
-                    plan=plan,
-                    user=user,
-                    gpt_result=gpt_result,
-                    document_key=item_name,
-                    summary_setting=summary_setting,
-                    api_key=api_key,
-                )
-                if ok:
-                    success_count += 1
-                    delivery.success_count = success_count
-                else:
-                    fail_count += 1
-                    delivery.fail_count = fail_count
-                db.commit()
-
-                # Heartbeat更新（Watchdog対策）
-                if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
-                    _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
-
-                time.sleep(throttle_seconds)
-    else:
-        # 通常送信: ユーザーごとにGPT生成
+    if plan.batch_send_enabled and has_split_data:
+        # =================================================
+        # まとめて送信モード: 分割を1メールにまとめる
+        # =================================================
+        logger.info(f"まとめて送信モード: plan_id={plan.id}, users={len(users)}, splits={len(split_items)}")
+        
+        # 質問なしの場合: 分割ごとのGPT結果をキャッシュ
+        split_gpt_cache = {}  # item_name -> gpt_result
+        
         for user in users:
             user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
             answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
 
-            # あらすじ注入
+            all_contents = []
+            
+            for item_name, item_data in split_items:
+                if has_user_vars:
+                    # 質問あり: ユーザーごとにGPT生成
+                    user_prompt = prompt
+                    if summary_setting:
+                        summaries = get_recent_summaries(
+                            db, plan.id, user.id, summary_setting.summary_inject_count
+                        )
+                        user_prompt = inject_summaries_into_prompt(user_prompt, summaries)
+
+                    resolved_prompt = resolve_variables(
+                        text=user_prompt,
+                        external_data=item_data,
+                        item_name=item_name,
+                        answers=answers_dict,
+                        user_name=f"{user.name_last} {user.name_first}",
+                        name_last=user.name_last,
+                        name_first=user.name_first,
+                    )
+
+                    try:
+                        gpt_result = generate_email_content(
+                            prompt=resolved_prompt,
+                            model=plan.model,
+                            system_prompt=plan.system_prompt,
+                            api_key=api_key,
+                        )
+                        all_contents.append((item_name, gpt_result))
+                    except Exception as e:
+                        logger.error(f"GPT生成失敗 (batch user={user.id}, item={item_name}): {e}")
+                else:
+                    # 質問なし: キャッシュから取得 or GPT生成
+                    if item_name not in split_gpt_cache:
+                        resolved_prompt = resolve_variables(
+                            text=prompt,
+                            external_data=item_data,
+                            item_name=item_name,
+                        )
+                        try:
+                            gpt_result = generate_email_content(
+                                prompt=resolved_prompt,
+                                model=plan.model,
+                                system_prompt=plan.system_prompt,
+                                api_key=api_key,
+                            )
+                            split_gpt_cache[item_name] = gpt_result
+                        except Exception as e:
+                            logger.error(f"GPT生成失敗 (batch item={item_name}): {e}")
+                            continue
+                    
+                    all_contents.append((item_name, split_gpt_cache[item_name]))
+
+            if not all_contents:
+                fail_count += 1
+                delivery.fail_count = fail_count
+                db.commit()
+                continue
+
+            # 分割コンテンツを結合
+            combined_result = _combine_gpt_results(all_contents)
+            
+            ok = _send_email_with_retry(
+                db=db,
+                delivery=delivery,
+                plan=plan,
+                user=user,
+                gpt_result=combined_result,
+                document_key="batch",
+                summary_setting=summary_setting,
+                api_key=api_key,
+            )
+            if ok:
+                success_count += 1
+                delivery.success_count = success_count
+            else:
+                fail_count += 1
+                delivery.fail_count = fail_count
+            db.commit()
+
+            # Heartbeat更新（Watchdog対策）
+            if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
+                _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
+
+            time.sleep(throttle_seconds)
+
+    elif has_split_data:
+        # =================================================
+        # 分割あり + まとめてOFF: 分割×ユーザー件のメール
+        # =================================================
+        logger.info(f"分割送信モード: plan_id={plan.id}, users={len(users)}, splits={len(split_items)}")
+        
+        for item_name, item_data in split_items:
+            if has_user_vars:
+                # 質問あり: ユーザーごとにGPT生成
+                for user in users:
+                    user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
+                    answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
+
+                    user_prompt = prompt
+                    if summary_setting:
+                        summaries = get_recent_summaries(
+                            db, plan.id, user.id, summary_setting.summary_inject_count
+                        )
+                        user_prompt = inject_summaries_into_prompt(user_prompt, summaries)
+
+                    resolved_prompt = resolve_variables(
+                        text=user_prompt,
+                        external_data=item_data,
+                        item_name=item_name,
+                        answers=answers_dict,
+                        user_name=f"{user.name_last} {user.name_first}",
+                        name_last=user.name_last,
+                        name_first=user.name_first,
+                    )
+
+                    ok = _send_with_retry(
+                        db=db,
+                        delivery=delivery,
+                        plan=plan,
+                        user=user,
+                        resolved_prompt=resolved_prompt,
+                        document_key=item_name,
+                        summary_setting=summary_setting,
+                        api_key=api_key,
+                    )
+                    if ok:
+                        success_count += 1
+                        delivery.success_count = success_count
+                    else:
+                        fail_count += 1
+                        delivery.fail_count = fail_count
+                    db.commit()
+
+                    if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
+                        _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
+
+                    time.sleep(throttle_seconds)
+            else:
+                # 質問なし: 分割ごとに1回GPT → 全ユーザーに送信
+                resolved_prompt = resolve_variables(
+                    text=prompt,
+                    external_data=item_data,
+                    item_name=item_name,
+                )
+
+                try:
+                    gpt_result = generate_email_content(
+                        prompt=resolved_prompt,
+                        model=plan.model,
+                        system_prompt=plan.system_prompt,
+                        api_key=api_key,
+                    )
+                except Exception as e:
+                    logger.error(f"GPT生成失敗 (split item={item_name}): {e}")
+                    # この分割アイテムの全ユーザーを失敗扱い
+                    for user in users:
+                        fail_count += 1
+                        delivery.fail_count = fail_count
+                        _create_delivery_item(
+                            db, delivery.id, user,
+                            document_key=item_name,
+                            status=3,
+                            error_msg=f"GPT生成失敗: {e}",
+                        )
+                    db.commit()
+                    continue
+
+                for user in users:
+                    ok = _send_email_with_retry(
+                        db=db,
+                        delivery=delivery,
+                        plan=plan,
+                        user=user,
+                        gpt_result=gpt_result,
+                        document_key=item_name,
+                        summary_setting=summary_setting,
+                        api_key=api_key,
+                    )
+                    if ok:
+                        success_count += 1
+                        delivery.success_count = success_count
+                    else:
+                        fail_count += 1
+                        delivery.fail_count = fail_count
+                    db.commit()
+
+                    if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
+                        _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
+
+                    time.sleep(throttle_seconds)
+
+    elif has_user_vars:
+        # =================================================
+        # 分割なし + 質問あり: ユーザーごとにGPT
+        # =================================================
+        logger.info(f"個別送信モード（質問あり）: plan_id={plan.id}, users={len(users)}")
+        
+        for user in users:
+            user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
+            answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
+
             user_prompt = prompt
             if summary_setting:
                 summaries = get_recent_summaries(
@@ -293,7 +435,56 @@ def execute_plan_delivery(
                 delivery.fail_count = fail_count
             db.commit()
 
-            # Heartbeat更新（Watchdog対策）
+            if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
+                _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
+
+            time.sleep(throttle_seconds)
+
+    else:
+        # =================================================
+        # 分割なし + 質問なし: GPT 1回 → 全員に同じ内容
+        # =================================================
+        logger.info(f"共通送信モード: plan_id={plan.id}, users={len(users)}")
+        
+        resolved_prompt = resolve_variables(
+            text=prompt,
+            external_data=external_data_str or None,
+        )
+
+        try:
+            gpt_result = generate_email_content(
+                prompt=resolved_prompt,
+                model=plan.model,
+                system_prompt=plan.system_prompt,
+                api_key=api_key,
+            )
+        except Exception as e:
+            logger.error(f"GPT生成失敗: {e}")
+            delivery.status = "failed"
+            delivery.fail_count = len(users)
+            delivery.completed_at = datetime.now(JST)
+            db.commit()
+            return delivery
+
+        for user in users:
+            ok = _send_email_with_retry(
+                db=db,
+                delivery=delivery,
+                plan=plan,
+                user=user,
+                gpt_result=gpt_result,
+                document_key=None,
+                summary_setting=summary_setting,
+                api_key=api_key,
+            )
+            if ok:
+                success_count += 1
+                delivery.success_count = success_count
+            else:
+                fail_count += 1
+                delivery.fail_count = fail_count
+            db.commit()
+
             if (success_count + fail_count) % HEARTBEAT_INTERVAL == 0:
                 _update_progress_heartbeat(db, progress_id, cursor=str(user.id))
 
@@ -310,16 +501,34 @@ def execute_plan_delivery(
     else:
         delivery.status = "partial_failed"
 
-    # 件名保存 (最初の成功アイテムから)
-    first_item = db.query(DeliveryItem).filter(
-        DeliveryItem.delivery_id == delivery.id,
-        DeliveryItem.status == 2,
-    ).first()
-    # subjectはDeliveryに保存 (delivery_itemsにはresend_message_idのみ)
-
     db.commit()
     logger.info(f"配信完了: delivery_id={delivery.id}, success={success_count}, fail={fail_count}")
     return delivery
+
+
+def _combine_gpt_results(contents: list) -> dict:
+    """複数のGPT結果を1つに結合する
+    
+    Args:
+        contents: [(item_name, gpt_result), ...]
+    
+    Returns:
+        結合されたgpt_result {"subject": ..., "body": ...}
+    """
+    if not contents:
+        return {"subject": "", "body": ""}
+    
+    # 件名は最初の結果を使用
+    subject = contents[0][1]["subject"]
+    
+    # 本文は区切り線で結合
+    bodies = []
+    for item_name, gpt_result in contents:
+        bodies.append(f"【{item_name}】\n{gpt_result['body']}")
+    
+    combined_body = "\n\n---\n\n".join(bodies)
+    
+    return {"subject": subject, "body": combined_body}
 
 
 def _get_target_users(db: Session, plan_id: int, target_user_id: int = None) -> list[User]:
