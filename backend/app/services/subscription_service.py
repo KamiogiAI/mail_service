@@ -25,11 +25,14 @@ logger = get_logger(__name__)
 
 
 def get_active_subscriptions(db: Session, user_id: int) -> list[Subscription]:
-    """アクティブな購読一覧"""
-    return db.query(Subscription).filter(
+    """アクティブな購読一覧（プランのsort_order順）"""
+    from app.models.plan import Plan
+    return db.query(Subscription).join(
+        Plan, Subscription.plan_id == Plan.id
+    ).filter(
         Subscription.user_id == user_id,
         Subscription.status.in_(["trialing", "active", "past_due", "admin_added"]),
-    ).all()
+    ).order_by(Plan.sort_order.asc(), Plan.created_at.desc()).all()
 
 
 def has_active_subscription(db: Session, user_id: int) -> bool:

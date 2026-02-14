@@ -42,5 +42,8 @@ class Plan(Base):
     # 削除予約
     pending_delete = Column(Boolean, nullable=False, default=False, comment="削除予約フラグ")
 
+    # 並び順
+    sort_order = Column(Integer, nullable=False, default=0, comment="表示順（小さいほど上）")
+
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
