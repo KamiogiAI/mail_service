@@ -157,6 +157,7 @@ def _get_or_create_portal_configurations() -> dict:
                 "enabled": True,
                 "default_allowed_updates": ["price"],
                 "proration_behavior": "create_prorations",
+                "products": [],  # 空リストで初期化（後でupdate_billing_portal_productsで設定）
             },
         }
         config = stripe.billing_portal.Configuration.create(
