@@ -11,8 +11,15 @@ from app.models.user import User
 from app.models.service_setting import ServiceSetting
 from app.models.promotion_code import PromotionCode
 from app.services import stripe_service
-from app.services.mail_service import send_subscription_cancel_email, send_payment_failed_email
+from app.services.mail_service import (
+    send_subscription_cancel_email,
+    send_payment_failed_email,
+    send_plan_change_email,
+)
 from app.core.logging import get_logger
+from zoneinfo import ZoneInfo
+
+JST = ZoneInfo("Asia/Tokyo")
 
 logger = get_logger(__name__)
 
@@ -243,6 +250,21 @@ def _apply_plan_change_immediately(
             logger.info(f"アップグレードに伴いクーポン削除: subscription_id={sub.id}")
         else:
             logger.warning(f"クーポン削除失敗: subscription_id={sub.id}")
+    
+    # プラン変更メール送信
+    if sub.user_id:
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        if user:
+            today = datetime.now(JST).strftime("%Y年%m月%d日")
+            send_plan_change_email(
+                to_email=user.email,
+                name=f"{user.name_last} {user.name_first}",
+                old_plan_name=old_name,
+                new_plan_name=new_plan.name,
+                new_plan_price=new_plan.price,
+                change_date=today,
+                is_immediate=True,
+            )
 
 
 def _schedule_plan_downgrade(
@@ -277,6 +299,21 @@ def _schedule_plan_downgrade(
         f"ダウングレード予約: subscription_id={sub.id}, "
         f"{old_name} → {new_plan.name}, 適用予定={period_end}"
     )
+    
+    # ダウングレード予約メール送信
+    if sub.user_id:
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        if user:
+            change_date = period_end.astimezone(JST).strftime("%Y年%m月%d日") if period_end else "-"
+            send_plan_change_email(
+                to_email=user.email,
+                name=f"{user.name_last} {user.name_first}",
+                old_plan_name=old_name,
+                new_plan_name=new_plan.name,
+                new_plan_price=new_plan.price,
+                change_date=change_date,
+                is_immediate=False,
+            )
 
 
 def _cancel_pending_plan_changes(db: Session, subscription_id: int):

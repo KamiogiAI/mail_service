@@ -173,6 +173,15 @@ def main():
         max_instances=1,
     )
 
+    # 毎日9:00 JST: トライアル終了間近リマインダー
+    from app.scheduler.trial_reminder import check_trial_ending
+    scheduler.add_job(
+        check_trial_ending,
+        CronTrigger(hour=9, minute=0, timezone="Asia/Tokyo"),
+        id="trial_reminder",
+        max_instances=1,
+    )
+
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
