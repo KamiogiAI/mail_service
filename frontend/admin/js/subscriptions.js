@@ -484,15 +484,26 @@ const SubscriptionsPage = {
         Object.entries(checkMap).forEach(([qid, vals]) => {
             answers.push({ question_id: parseInt(qid), answer: JSON.stringify(vals) });
         });
-        // array
+        // array - 最低件数チェック付き
+        let arrayError = null;
         document.querySelectorAll('#sub-detail-body .sd-array-wrap').forEach(container => {
             const qid = container.dataset.qid;
+            const minReq = parseInt(container.dataset.min) || 0;
             const vals = [];
             container.querySelectorAll('.sd-array-input').forEach(input => {
                 if (input.value.trim()) vals.push(input.value.trim());
             });
+            if (minReq > 0 && vals.length < minReq) {
+                const label = container.closest('.form-group')?.querySelector('label')?.textContent || '項目';
+                arrayError = `「${label.replace(' *', '')}」は${minReq}件以上入力してください`;
+            }
             answers.push({ question_id: parseInt(qid), answer: JSON.stringify(vals) });
         });
+
+        if (arrayError) {
+            alert(arrayError);
+            return;
+        }
 
         try {
             await API.put(`/api/admin/subscriptions/${subId}/answers`, { answers });
