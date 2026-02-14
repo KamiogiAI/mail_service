@@ -75,18 +75,7 @@ async def subscribe(
             raise HTTPException(status_code=400, detail="このプロモーションコードはこのプランには適用できません")
         stripe_promotion_code_id = promo.stripe_promotion_code_id
 
-    # 無料プラン: Stripe不要、直接購読作成
-    if plan.price == 0:
-        sub = Subscription(
-            user_id=user.id,
-            plan_id=plan.id,
-            member_no_snapshot=user.member_no,
-            status="active",
-        )
-        db.add(sub)
-        db.commit()
-        return {"message": "購読を開始しました", "subscription_id": sub.id}
-
+    # 無料プランでもStripe経由で処理（Billing Portal利用のため）
     # 有料プラン: Stripe Checkout
     if not plan.stripe_price_id:
         raise HTTPException(status_code=400, detail="このプランは購読できません")
@@ -214,10 +203,13 @@ async def checkout_complete(
             return {"message": "購読は既に登録済みです", "subscription_id": existing.id}
         raise HTTPException(status_code=500, detail="購読の作成に失敗しました")
 
-    # トライアル使用フラグ更新
+    # トライアル使用フラグ更新（無料プランの場合は消費しない）
     if status == "trialing" and not user.trial_used:
-        user.trial_used = True
-        db.commit()
+        plan = db.query(Plan).filter(Plan.id == plan_id).first()
+        if plan and plan.price > 0:
+            user.trial_used = True
+            db.commit()
+            logger.info(f"トライアル使用フラグ設定: user_id={user.id}")
 
     logger.info(f"checkout-complete: 購読作成 user_id={user.id}, subscription_id={sub.id}")
     return {"message": "購読を登録しました", "subscription_id": sub.id}
@@ -236,11 +228,17 @@ async def billing_portal(
     if not user.stripe_customer_id:
         raise HTTPException(status_code=400, detail="決済情報が見つかりません")
 
-    # トライアル中かどうかを確認
-    is_trial = db.query(Subscription).filter(
+    # トライアル中かどうかを確認（無料プランの場合はプラン変更を許可）
+    trial_sub = db.query(Subscription).filter(
         Subscription.user_id == user.id,
         Subscription.status == "trialing",
-    ).first() is not None
+    ).first()
+    
+    is_trial = False
+    if trial_sub:
+        plan = db.query(Plan).filter(Plan.id == trial_sub.plan_id).first()
+        # 無料プラン（price=0）の場合はトライアル扱いしない（プラン変更可能）
+        is_trial = plan.price > 0 if plan else True
 
     return_url = req.return_url or f"{settings.SITE_URL}/user/mypage.html"
     try:

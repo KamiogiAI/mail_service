@@ -120,10 +120,11 @@ def _handle_checkout_completed(db: Session, data: dict):
         # Stripe Customer ID更新
         if stripe_customer_id and not user.stripe_customer_id:
             user.stripe_customer_id = stripe_customer_id
-        # トライアル使用済みに (プランでトライアルが有効な場合のみ)
+        # トライアル使用済みに (有料プランでトライアルが有効な場合のみ、無料プランは消費しない)
         plan = db.query(Plan).filter(Plan.id == plan_id).first()
-        if plan and plan.trial_enabled:
+        if plan and plan.trial_enabled and plan.price > 0:
             user.trial_used = True
+            logger.info(f"トライアル使用フラグ設定: user_id={user.id}, plan_id={plan_id}")
         db.commit()
 
     # 購読レコード作成 (重複チェック)
