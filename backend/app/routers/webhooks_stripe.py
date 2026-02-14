@@ -16,6 +16,7 @@ from app.models.user import User
 from app.models.plan import Plan
 from app.models.subscription import Subscription
 from app.models.processed_stripe_event import ProcessedStripeEvent
+from app.models.promotion_code import PromotionCode
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +42,7 @@ async def stripe_webhook(request: Request):
     event_id = event["id"]
     event_type = event["type"]
     data = event["data"]["object"]
+    previous_attributes = event["data"].get("previous_attributes", {})
 
     db = SessionLocal()
     try:
@@ -54,7 +56,7 @@ async def stripe_webhook(request: Request):
         elif event_type == "customer.subscription.created":
             _handle_subscription_created(db, data)
         elif event_type == "customer.subscription.updated":
-            _handle_subscription_updated(db, data, event_id)
+            _handle_subscription_updated(db, data, event_id, previous_attributes)
         elif event_type == "customer.subscription.deleted":
             _handle_subscription_deleted(db, data)
         elif event_type == "invoice.paid":
@@ -181,6 +183,29 @@ def _handle_checkout_completed(db: Session, data: dict):
     )
 
     logger.info(f"Checkout完了: user_id={user_id}, plan_id={plan_id}, status={status}")
+
+    # プロモーションコード使用数を更新
+    try:
+        # Checkout Sessionのdiscounts配列からpromotion_codeを取得
+        discounts = data.get("discounts", []) or []
+        # または単一のdiscount
+        if not discounts and data.get("discount"):
+            discount = data.get("discount", {})
+            if discount.get("promotion_code"):
+                discounts = [{"promotion_code": discount["promotion_code"]}]
+        
+        for discount_item in discounts:
+            promo_code_id = discount_item.get("promotion_code")
+            if promo_code_id:
+                promo = db.query(PromotionCode).filter(
+                    PromotionCode.stripe_promotion_code_id == promo_code_id
+                ).first()
+                if promo:
+                    promo.times_redeemed = (promo.times_redeemed or 0) + 1
+                    db.commit()
+                    logger.info(f"プロモーションコード使用: code={promo.code}, times_redeemed={promo.times_redeemed}")
+    except Exception as e:
+        logger.warning(f"プロモーションコード使用数更新失敗: {e}")
     
     # 加入完了メール送信
     if user and plan:
@@ -274,8 +299,9 @@ def _handle_subscription_created(db: Session, data: dict):
     )
 
 
-def _handle_subscription_updated(db: Session, data: dict, event_id: str):
+def _handle_subscription_updated(db: Session, data: dict, event_id: str, previous_attributes: dict = None):
     """customer.subscription.updated: ステータス変更 + プラン変更検知"""
+    previous_attributes = previous_attributes or {}
     stripe_sub_id = data.get("id")
     status = data.get("status", "active")
     cancel_at_period_end = data.get("cancel_at_period_end", False)
@@ -307,6 +333,23 @@ def _handle_subscription_updated(db: Session, data: dict, event_id: str):
                 current_period_end=datetime.fromtimestamp(period_end) if period_end else None,
                 stripe_event_id=event_id,
             )
+
+    # 3. プロモーションコード使用数を更新（新規適用時のみ）
+    # previous_attributes に "discount" が含まれている = 今回 discount が変更された
+    try:
+        if "discount" in previous_attributes:
+            discount = data.get("discount")
+            if discount and discount.get("promotion_code"):
+                promo_code_id = discount["promotion_code"]
+                promo = db.query(PromotionCode).filter(
+                    PromotionCode.stripe_promotion_code_id == promo_code_id
+                ).first()
+                if promo:
+                    promo.times_redeemed = (promo.times_redeemed or 0) + 1
+                    db.commit()
+                    logger.info(f"プロモーションコード使用（プラン変更）: code={promo.code}, times_redeemed={promo.times_redeemed}")
+    except Exception as e:
+        logger.warning(f"プロモーションコード使用数更新失敗（subscription.updated）: {e}")
 
 
 def _handle_subscription_deleted(db: Session, data: dict):
