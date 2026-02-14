@@ -155,16 +155,16 @@ def detect_and_handle_plan_change(
     old_price = old_plan.price if old_plan else 0
     new_price = new_plan.price
 
-    if new_price >= old_price:
-        # アップグレード or 同額: 即時適用
-        change_type = "upgrade" if new_price > old_price else "lateral"
-        _apply_plan_change_immediately(db, sub, old_plan, new_plan, change_type, stripe_event_id)
+    # 変更種別を判定
+    if new_price > old_price:
+        change_type = "upgrade"
+    elif new_price < old_price:
+        change_type = "downgrade"
     else:
-        # ダウングレード: 期間終了時に適用 (支払い済み期間は上位プランを維持)
-        # current_period_endがNoneの場合、DBの値を使う
-        effective_date = current_period_end or sub.current_period_end
-        _schedule_plan_downgrade(db, sub, old_plan, new_plan, effective_date, stripe_event_id)
-        # ダウングレードの場合、クーポン削除は実際の適用時(apply_scheduled_plan_changes)で行う
+        change_type = "lateral"
+
+    # すべてのプラン変更を即時適用（Stripeの日割り計算に従う）
+    _apply_plan_change_immediately(db, sub, old_plan, new_plan, change_type, stripe_event_id)
 
 
 def _should_remove_coupon(db: Session, stripe_subscription_id: str, new_plan_id: int) -> bool:
@@ -213,7 +213,7 @@ def _apply_plan_change_immediately(
     change_type: str,
     stripe_event_id: str = None,
 ):
-    """プラン変更を即時適用 (アップグレード・同額変更)"""
+    """プラン変更を即時適用 (アップグレード・ダウングレード・同額変更)"""
     old_plan_id = sub.plan_id
     sub.plan_id = new_plan.id
     sub.scheduled_plan_id = None
@@ -244,10 +244,10 @@ def _apply_plan_change_immediately(
         f"{old_name}(id={old_plan_id}) → {new_plan.name}(id={new_plan.id}) [{change_type}]"
     )
 
-    # アップグレード時、新プランがクーポン対象外ならクーポンを削除
+    # 新プランがクーポン対象外ならクーポンを削除
     if sub.stripe_subscription_id and _should_remove_coupon(db, sub.stripe_subscription_id, new_plan.id):
         if stripe_service.remove_subscription_coupon(sub.stripe_subscription_id):
-            logger.info(f"アップグレードに伴いクーポン削除: subscription_id={sub.id}")
+            logger.info(f"プラン変更に伴いクーポン削除: subscription_id={sub.id}")
         else:
             logger.warning(f"クーポン削除失敗: subscription_id={sub.id}")
     
@@ -275,7 +275,12 @@ def _schedule_plan_downgrade(
     period_end: datetime = None,
     stripe_event_id: str = None,
 ):
-    """ダウングレードを期間終了時にスケジュール"""
+    """ダウングレードを期間終了時にスケジュール
+    
+    注意: この関数は現在使用されていません。
+    ダウングレードも即時適用に変更されました (2026-02-14)。
+    既存のスケジュール済み変更の処理のために残しています。
+    """
     # 既存の未適用予約をキャンセル
     _cancel_pending_plan_changes(db, sub.id)
 
