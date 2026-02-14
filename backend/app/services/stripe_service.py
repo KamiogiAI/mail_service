@@ -90,37 +90,41 @@ def create_customer(email: str, name: str, metadata: dict = None) -> str:
 
 
 def _get_or_create_portal_configuration() -> str:
-    """Billing Portal Configuration を取得または作成"""
+    """Billing Portal Configuration を取得または作成
+    
+    注意: プラン変更はカスタムAPIで行うため、Billing Portalでは無効化
+    """
     _init_stripe()
+    
+    # 期待する設定（プラン変更は無効、解約・支払方法変更・履歴は有効）
+    expected_features = {
+        "subscription_update": {
+            "enabled": False,  # プラン変更はカスタムAPIで行う
+        },
+        "subscription_cancel": {
+            "enabled": True,
+            "mode": "at_period_end",
+        },
+        "payment_method_update": {"enabled": True},
+        "invoice_history": {"enabled": True},
+    }
     
     # 既存のConfigurationを取得
     configs = stripe.billing_portal.Configuration.list(limit=1, is_default=True)
     if configs.data:
         config = configs.data[0]
-        # proration_behaviorが正しく設定されているか確認
+        # subscription_updateが無効化されているか確認
         sub_update = config.features.get("subscription_update", {})
-        if sub_update.get("proration_behavior") == "create_prorations":
+        if not sub_update.get("enabled", True):
             return config.id
         
         # 設定が異なる場合は更新
         try:
             stripe.billing_portal.Configuration.modify(
                 config.id,
-                features={
-                    "subscription_update": {
-                        "enabled": True,
-                        "default_allowed_updates": ["price"],
-                        "proration_behavior": "create_prorations",
-                    },
-                    "subscription_cancel": {
-                        "enabled": True,
-                        "mode": "at_period_end",
-                    },
-                    "payment_method_update": {"enabled": True},
-                    "invoice_history": {"enabled": True},
-                },
+                features=expected_features,
             )
-            logger.info(f"Billing Portal Configuration更新: {config.id}")
+            logger.info(f"Billing Portal Configuration更新（プラン変更無効化）: {config.id}")
             return config.id
         except Exception as e:
             logger.warning(f"Configuration更新失敗: {e}")
@@ -128,19 +132,7 @@ def _get_or_create_portal_configuration() -> str:
     
     # 新規作成
     config = stripe.billing_portal.Configuration.create(
-        features={
-            "subscription_update": {
-                "enabled": True,
-                "default_allowed_updates": ["price"],
-                "proration_behavior": "create_prorations",
-            },
-            "subscription_cancel": {
-                "enabled": True,
-                "mode": "at_period_end",
-            },
-            "payment_method_update": {"enabled": True},
-            "invoice_history": {"enabled": True},
-        },
+        features=expected_features,
         business_profile={
             "headline": "プランの管理",
         },
@@ -162,6 +154,43 @@ def create_billing_portal_session(customer_id: str, return_url: str) -> str:
         configuration=config_id,
     )
     return session.url
+
+
+def change_subscription_plan(
+    subscription_id: str,
+    new_price_id: str,
+    is_trial: bool = False,
+) -> dict:
+    """購読のプランを変更
+    
+    Args:
+        subscription_id: Stripe Subscription ID
+        new_price_id: 新しいプランのStripe Price ID
+        is_trial: トライアル中かどうか（Trueなら日割りなし）
+    
+    Returns:
+        更新されたSubscription
+    """
+    _init_stripe()
+    
+    # 現在のサブスクリプションを取得してitem IDを特定
+    subscription = stripe.Subscription.retrieve(subscription_id)
+    item_id = subscription["items"]["data"][0]["id"]
+    
+    # トライアル中は日割りなし、通常は日割りあり
+    proration_behavior = "none" if is_trial else "create_prorations"
+    
+    updated = stripe.Subscription.modify(
+        subscription_id,
+        items=[{
+            "id": item_id,
+            "price": new_price_id,
+        }],
+        proration_behavior=proration_behavior,
+    )
+    
+    logger.info(f"プラン変更: subscription={subscription_id}, new_price={new_price_id}, proration={proration_behavior}")
+    return updated
 
 
 def cancel_subscription(subscription_id: str, at_period_end: bool = True):
