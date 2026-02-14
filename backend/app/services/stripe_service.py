@@ -206,6 +206,12 @@ def cancel_subscription_immediately(subscription_id: str):
     stripe.Subscription.cancel(subscription_id)
 
 
+def resume_subscription(subscription_id: str):
+    """キャンセル予約を解除して購読を再開"""
+    _init_stripe()
+    stripe.Subscription.modify(subscription_id, cancel_at_period_end=False)
+
+
 def create_coupon(
     discount_type: str,
     discount_value: int,
