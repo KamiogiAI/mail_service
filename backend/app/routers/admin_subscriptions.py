@@ -20,7 +20,7 @@ ACTIVE_STATUSES = ("trialing", "active", "past_due", "admin_added")
 @router.get("")
 async def list_subscriptions(db: Session = Depends(get_db), _=Depends(require_admin)):
     """購読一覧 (プラン別グループ)"""
-    plans = db.query(Plan).order_by(Plan.created_at.desc()).all()
+    plans = db.query(Plan).order_by(Plan.sort_order.asc()).all()
 
     result = []
     for plan in plans:

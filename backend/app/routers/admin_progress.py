@@ -72,7 +72,7 @@ async def get_scheduler_status(db: Session = Depends(get_db), _=Depends(require_
     emergency_stop = check_emergency_stop()
 
     # 全有効プランの状態
-    plans = db.query(Plan).filter(Plan.is_active == True).all()
+    plans = db.query(Plan).filter(Plan.is_active == True).order_by(Plan.sort_order.asc()).all()
     today_items = db.query(ProgressPlan).filter(ProgressPlan.date == today).all()
 
     plan_statuses = []
@@ -181,7 +181,7 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
     # スケジューラー (有効プランの配信予定)
     schedule_type_label = {"daily": "毎日", "weekday": "曜日指定", "sheets": "シート連動"}
     weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
-    active_plan_list = db.query(Plan).filter(Plan.is_active == True).all()
+    active_plan_list = db.query(Plan).filter(Plan.is_active == True).order_by(Plan.sort_order.asc()).all()
     schedules = []
     for pl in active_plan_list:
         wd_str = ""
@@ -310,7 +310,7 @@ async def list_progress(
 
     # ProgressPlan がまだない有効プランを「待機中」として追加
     schedule_type_label = {"daily": "毎日", "weekday": "曜日指定", "sheets": "シート連動"}
-    active_plans = db.query(Plan).filter(Plan.is_active == True).all()
+    active_plans = db.query(Plan).filter(Plan.is_active == True).order_by(Plan.sort_order.asc()).all()
     for pl in active_plans:
         if pl.id in existing_plan_ids:
             continue
