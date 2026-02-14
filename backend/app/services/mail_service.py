@@ -81,6 +81,30 @@ def send_password_reset_email(to_email: str, name: str, reset_url: str) -> bool:
         return False
 
 
+def send_welcome_email(to_email: str, name: str) -> bool:
+    """登録完了ウェルカムメール送信"""
+    try:
+        resend.api_key = _get_resend_api_key()
+        template = jinja_env.get_template("welcome.html")
+        html = template.render(
+            name=name,
+            site_name=get_site_name(),
+            site_url=settings.SITE_URL,
+        )
+
+        resend.Emails.send({
+            "from": get_from_email(),
+            "to": [to_email],
+            "subject": "あなた専用の成長設計を準備しています",
+            "html": html,
+        })
+        logger.info(f"ウェルカムメール送信: {to_email}")
+        return True
+    except Exception as e:
+        logger.error(f"ウェルカムメール送信失敗: {to_email} - {e}")
+        return False
+
+
 def send_subscription_cancel_email(to_email: str, name: str, plan_name: str) -> bool:
     """プラン強制解約通知メール"""
     try:
