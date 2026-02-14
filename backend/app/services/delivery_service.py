@@ -27,6 +27,7 @@ from app.services.summary_service import (
 )
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.worker.throttle_manager import check_emergency_stop
 
 logger = get_logger(__name__)
 JST = ZoneInfo("Asia/Tokyo")
@@ -206,6 +207,14 @@ def execute_plan_delivery(
         split_gpt_cache = {}  # item_name -> gpt_result
         
         for user in users:
+            # 緊急停止チェック
+            if check_emergency_stop():
+                logger.warning(f"緊急停止により配信中断: delivery_id={delivery.id}")
+                delivery.status = "stopped"
+                delivery.completed_at = datetime.now(JST)
+                db.commit()
+                return delivery
+
             user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
             answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
 
@@ -316,6 +325,14 @@ def execute_plan_delivery(
             if has_user_vars:
                 # 質問あり: ユーザーごとにGPT生成
                 for user in users:
+                    # 緊急停止チェック
+                    if check_emergency_stop():
+                        logger.warning(f"緊急停止により配信中断: delivery_id={delivery.id}")
+                        delivery.status = "stopped"
+                        delivery.completed_at = datetime.now(JST)
+                        db.commit()
+                        return delivery
+
                     user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
                     answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
 
@@ -389,6 +406,14 @@ def execute_plan_delivery(
                     continue
 
                 for user in users:
+                    # 緊急停止チェック
+                    if check_emergency_stop():
+                        logger.warning(f"緊急停止により配信中断: delivery_id={delivery.id}")
+                        delivery.status = "stopped"
+                        delivery.completed_at = datetime.now(JST)
+                        db.commit()
+                        return delivery
+
                     ok = _send_email_with_retry(
                         db=db,
                         delivery=delivery,
@@ -419,6 +444,14 @@ def execute_plan_delivery(
         logger.info(f"個別送信モード（質問あり）: plan_id={plan.id}, users={len(users)}")
         
         for user in users:
+            # 緊急停止チェック
+            if check_emergency_stop():
+                logger.warning(f"緊急停止により配信中断: delivery_id={delivery.id}")
+                delivery.status = "stopped"
+                delivery.completed_at = datetime.now(JST)
+                db.commit()
+                return delivery
+
             user_answers = db.query(UserAnswer).filter(UserAnswer.user_id == user.id).all()
             answers_dict = _build_answers_with_fallback(db, user.id, plan.id, questions, user_answers)
 
@@ -496,6 +529,14 @@ def execute_plan_delivery(
             return delivery
 
         for user in users:
+            # 緊急停止チェック
+            if check_emergency_stop():
+                logger.warning(f"緊急停止により配信中断: delivery_id={delivery.id}")
+                delivery.status = "stopped"
+                delivery.completed_at = datetime.now(JST)
+                db.commit()
+                return delivery
+
             ok = _send_email_with_retry(
                 db=db,
                 delivery=delivery,
