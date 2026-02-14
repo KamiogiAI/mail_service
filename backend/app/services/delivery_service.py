@@ -259,9 +259,12 @@ def execute_plan_delivery(
                             split_gpt_cache[item_name] = gpt_result
                         except Exception as e:
                             logger.error(f"GPT生成失敗 (batch item={item_name}): {e}")
-                            continue
+                            split_gpt_cache[item_name] = None  # 失敗をマーク
                     
-                    all_contents.append((item_name, split_gpt_cache[item_name]))
+                    cached = split_gpt_cache.get(item_name)
+                    if cached is None:
+                        continue  # 失敗済みアイテムはスキップ
+                    all_contents.append((item_name, cached))
 
             if not all_contents:
                 # 全分割アイテムでGPT生成失敗
