@@ -149,23 +149,18 @@ def _get_or_create_portal_configurations() -> dict:
         trial_config_id = config.id
         logger.info(f"Billing Portal Configuration作成（トライアル用）: {config.id}")
     
-    # 通常用がなければ作成
+    # 通常用がなければ作成（初期はプラン変更無効、update_billing_portal_productsで有効化）
     if not normal_config_id:
         normal_features = {
             **base_features,
-            "subscription_update": {
-                "enabled": True,
-                "default_allowed_updates": ["price"],
-                "proration_behavior": "create_prorations",
-                "products": [],  # 空リストで初期化（後でupdate_billing_portal_productsで設定）
-            },
+            "subscription_update": {"enabled": False},  # productsが必須なので初期は無効
         }
         config = stripe.billing_portal.Configuration.create(
             features=normal_features,
             business_profile={"headline": "プランの管理"},
         )
         normal_config_id = config.id
-        logger.info(f"Billing Portal Configuration作成（通常用）: {config.id}")
+        logger.info(f"Billing Portal Configuration作成（通常用、初期状態）: {config.id}")
     
     _portal_config_cache["trial"] = trial_config_id
     _portal_config_cache["normal"] = normal_config_id
@@ -344,13 +339,19 @@ def update_billing_portal_products(products: list[dict]) -> bool:
         configs = _get_or_create_portal_configurations()
         normal_config_id = configs["normal"]
         
-        features = {
-            "subscription_update": {
+        # productsがある場合のみプラン変更を有効化
+        if products:
+            subscription_update = {
                 "enabled": True,
                 "default_allowed_updates": ["price"],
                 "proration_behavior": "create_prorations",
-                "products": products if products else [],
-            },
+                "products": products,
+            }
+        else:
+            subscription_update = {"enabled": False}
+        
+        features = {
+            "subscription_update": subscription_update,
             "subscription_cancel": {
                 "enabled": True,
                 "mode": "at_period_end",
@@ -360,7 +361,7 @@ def update_billing_portal_products(products: list[dict]) -> bool:
         }
         
         stripe.billing_portal.Configuration.modify(normal_config_id, features=features)
-        logger.info(f"Billing Portal products更新（通常用）: {len(products)}プラン")
+        logger.info(f"Billing Portal products更新（通常用）: {len(products)}プラン, enabled={bool(products)}")
         
         return True
     except Exception as e:
