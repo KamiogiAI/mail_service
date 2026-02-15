@@ -34,5 +34,7 @@ class SubscriptionInfo(BaseModel):
     discount_percent: Optional[float] = None  # 割引率（%）
     discount_amount: Optional[int] = None  # 割引額（円）
     actual_price: Optional[int] = None  # 実際の請求額（割引後）
+    # 決済問題フラグ
+    has_payment_issue: bool = False  # past_due等の決済問題がある場合true
 
     model_config = {"from_attributes": True}

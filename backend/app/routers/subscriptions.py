@@ -305,6 +305,7 @@ async def my_subscriptions(
             discount_percent=discount_percent,
             discount_amount=discount_amount,
             actual_price=actual_price,
+            has_payment_issue=sub.status in ("past_due", "unpaid"),
         )
         result.append(info)
     return result
