@@ -93,7 +93,7 @@
             var fullName = ((user.name_last || '') + ' ' + (user.name_first || '')).trim();
             var navHtml =
                 '<span class="nav-user-name">' + esc(fullName || 'ユーザー') + ' 様</span>' +
-                '<a href="/user/mypage.html">マイページ</a>' +
+                '<a href="/form/user/mypage.html">マイページ</a>' +
                 '<a href="#" onclick="siteLogout();return false;">ログアウト</a>';
             if (nav) nav.innerHTML = navHtml;
             updateMobileNav(navHtml);
@@ -102,8 +102,8 @@
             // ログアウト中: ログイン | 新規登録
             var nav = document.getElementById('header-nav');
             var navHtml =
-                '<a href="/login.html">ログイン</a>' +
-                '<a href="/register.html">新規登録</a>';
+                '<a href="/form/login.html">ログイン</a>' +
+                '<a href="/form/register.html">新規登録</a>';
             if (nav) nav.innerHTML = navHtml;
             updateMobileNav(navHtml);
         });
@@ -123,6 +123,6 @@ function siteLogout() {
     .catch(function() {})
     .finally(function() {
         localStorage.removeItem('csrf_token');
-        location.href = '/login.html';
+        location.href = '/form/login.html';
     });
 }

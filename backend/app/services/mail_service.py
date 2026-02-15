@@ -115,7 +115,7 @@ def send_subscription_cancel_email(to_email: str, name: str, plan_name: str) -> 
             <p>{name} 様</p>
             <p>ご利用いただいていた「{plan_name}」プランが終了いたしました。</p>
             <p>引き続きサービスをご利用される場合は、新しいプランへの加入をお願いいたします。</p>
-            <p><a href="{settings.SITE_URL}">プラン一覧を見る</a></p>
+            <p><a href="{settings.SITE_URL}/form/">プラン一覧を見る</a></p>
         </div>
         """
         resend.Emails.send({
@@ -140,7 +140,7 @@ def send_payment_failed_email(to_email: str, name: str, plan_name: str) -> bool:
             <p>{name} 様</p>
             <p>「{plan_name}」プランの決済に失敗しました。配信を一時停止しております。</p>
             <p>お支払い方法をご確認のうえ、更新をお願いいたします。</p>
-            <p><a href="{settings.SITE_URL}/user/mypage.html">マイページで確認する</a></p>
+            <p><a href="{settings.SITE_URL}/form/user/mypage.html">マイページで確認する</a></p>
         </div>
         """
         resend.Emails.send({
@@ -230,7 +230,7 @@ def send_subscription_welcome_email(
             {trial_notice}
             
             <p>マイページからいつでもプラン変更・解約が可能です。</p>
-            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #28a745; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページを見る</a></p>
+            <p><a href="{settings.SITE_URL}/form/user/mypage.html" style="display: inline-block; background: #28a745; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページを見る</a></p>
         </div>
         """
         resend.Emails.send({
@@ -280,7 +280,7 @@ def send_plan_change_email(
             
             <p style="color: #666;">{notice}</p>
             
-            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #4285f4; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
+            <p><a href="{settings.SITE_URL}/form/user/mypage.html" style="display: inline-block; background: #4285f4; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
         </div>
         """
         resend.Emails.send({
@@ -319,7 +319,7 @@ def send_cancel_scheduled_email(
             <p><strong>{end_date}</strong> まで引き続きサービスをご利用いただけます。</p>
             <p>解約を取り消す場合は、マイページから再開手続きが可能です。</p>
             
-            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #6c757d; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
+            <p><a href="{settings.SITE_URL}/form/user/mypage.html" style="display: inline-block; background: #6c757d; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
             
             <p style="color: #666; font-size: 14px; margin-top: 30px;">
                 ご利用いただきありがとうございました。<br>
@@ -367,7 +367,7 @@ def send_trial_ending_email(
             <p><strong>解約する場合:</strong><br>
             トライアル期間中にマイページから解約手続きを行ってください。</p>
             
-            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #ffc107; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
+            <p><a href="{settings.SITE_URL}/form/user/mypage.html" style="display: inline-block; background: #ffc107; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページで確認</a></p>
         </div>
         """
         resend.Emails.send({
@@ -407,7 +407,7 @@ def send_renewal_complete_email(
             
             <p>引き続きサービスをお楽しみください。</p>
             
-            <p><a href="{settings.SITE_URL}/user/mypage.html" style="display: inline-block; background: #28a745; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページを見る</a></p>
+            <p><a href="{settings.SITE_URL}/form/user/mypage.html" style="display: inline-block; background: #28a745; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">マイページを見る</a></p>
         </div>
         """
         resend.Emails.send({

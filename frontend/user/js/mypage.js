@@ -123,7 +123,7 @@ async function loadPlanCards() {
                 <div class="dash-card">
                     <div class="empty-state">
                         <p>加入中のプランはありません</p>
-                        <a href="/index.html">プランを探す</a>
+                        <a href="/form/index.html">プランを探す</a>
                     </div>
                 </div>`;
             return;
@@ -703,7 +703,7 @@ async function openBillingPortal() {
 async function logout() {
     try { await API.post('/api/auth/logout'); } catch {}
     localStorage.removeItem('csrf_token');
-    location.href = '/login.html';
+    location.href = '/form/login.html';
 }
 
 // --- 起動 ---

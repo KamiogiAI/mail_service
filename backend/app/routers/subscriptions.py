@@ -99,10 +99,10 @@ async def subscribe(
 
     # リダイレクトURL検証 (オープンリダイレクト防止)
     success_url = _validate_redirect_url(req.success_url) or (
-        f"{settings.SITE_URL}/user/mypage.html?subscription=success&session_id={{CHECKOUT_SESSION_ID}}"
+        f"{settings.SITE_URL}/form/user/mypage.html?subscription=success&session_id={{CHECKOUT_SESSION_ID}}"
     )
     cancel_url = _validate_redirect_url(req.cancel_url) or (
-        f"{settings.SITE_URL}/user/subscribe.html?plan_id={plan.id}"
+        f"{settings.SITE_URL}/form/user/subscribe.html?plan_id={plan.id}"
     )
 
     try:
@@ -240,7 +240,7 @@ async def billing_portal(
         # 無料プラン（price=0）の場合はトライアル扱いしない（プラン変更可能）
         is_trial = plan.price > 0 if plan else True
 
-    return_url = req.return_url or f"{settings.SITE_URL}/user/mypage.html"
+    return_url = req.return_url or f"{settings.SITE_URL}/form/user/mypage.html"
     try:
         url = stripe_service.create_billing_portal_session(
             user.stripe_customer_id, return_url, is_trial=is_trial

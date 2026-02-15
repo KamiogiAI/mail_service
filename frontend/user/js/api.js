@@ -32,7 +32,7 @@ const API = {
         if (res.status === 401) {
             // 無限リダイレクト防止
             if (!location.pathname.includes('login.html')) {
-                location.href = '/login.html';
+                location.href = '/form/login.html';
             }
             throw new Error('ログインが必要です');
         }

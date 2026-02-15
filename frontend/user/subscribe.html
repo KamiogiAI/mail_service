@@ -23,8 +23,8 @@
 </head>
 <body>
     <header class="header">
-        <h1><a href="/index.html"><span class="site-name">Mail Service</span></a></h1>
-        <nav id="header-nav"><a href="/user/mypage.html">マイページ</a><a href="#" onclick="siteLogout();return false;">ログアウト</a></nav>
+        <h1><a href="/form/index.html"><span class="site-name">Mail Service</span></a></h1>
+        <nav id="header-nav"><a href="/form/user/mypage.html">マイページ</a><a href="#" onclick="siteLogout();return false;">ログアウト</a></nav>
     </header>
 
     <div class="container">
@@ -32,9 +32,9 @@
     </div>
 
     <footer>
-        <a href="/pages.html?type=terms">利用規約</a>
-        <a href="/pages.html?type=company">運営会社</a>
-        <a href="/pages.html?type=tokusho">特定商取引法</a>
+        <a href="/form/pages.html?type=terms">利用規約</a>
+        <a href="/form/pages.html?type=company">運営会社</a>
+        <a href="/form/pages.html?type=tokusho">特定商取引法</a>
     </footer>
 
     <script src="/assets/site.js"></script>
@@ -433,7 +433,7 @@
                 });
             } catch (e) {
                 // 未ログイン: 会員登録ページへリダイレクト（plan_idを引き継ぐ）
-                location.href = `/register.html?plan_id=${planId}`;
+                location.href = `/form/register.html?plan_id=${planId}`;
             }
         })();
     </script>
