@@ -2,6 +2,7 @@
 import urllib.parse
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -13,7 +14,7 @@ from app.models.promotion_code import PromotionCode
 from app.models.subscription import Subscription
 from app.schemas.subscription import (
     SubscribeRequest, BillingPortalRequest, SubscriptionInfo, CheckoutCompleteRequest,
-    SchedulePlanChangeRequest,
+    SchedulePlanChangeRequest, ChangePlanRequest, ChangePlanResponse,
 )
 from app.services import stripe_service, subscription_service
 from app.routers.deps import require_login
@@ -418,3 +419,84 @@ async def cancel_scheduled_plan_change(
     logger.info(f"プラン変更予約キャンセル: user_id={user.id}, subscription_id={sub.id}")
 
     return {"message": "プラン変更予約をキャンセルしました"}
+
+
+@router.post("/change-plan", response_model=ChangePlanResponse)
+async def change_plan(
+    req: ChangePlanRequest,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    """プラン変更（カスタムUI用）
+    
+    - アップグレード: 即時（日割り差額請求）
+    - ダウングレード + プロモーションコードあり: 即時（日割り）
+    - ダウングレード + プロモーションコードなし: 期間終了時予約
+    - トライアル中: 全て予約（トライアル終了時）
+    - 無料→有料: エラー（Checkout経由を促す）
+    """
+    # 購読の確認
+    sub = db.query(Subscription).filter(
+        Subscription.id == req.subscription_id,
+        Subscription.user_id == user.id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="購読が見つかりません")
+    
+    # ステータス確認
+    if sub.status not in ("trialing", "active", "past_due"):
+        raise HTTPException(status_code=400, detail="この購読はプラン変更できません")
+    
+    # 新しいプランの確認
+    new_plan = db.query(Plan).filter(Plan.id == req.new_plan_id, Plan.is_active == True).first()
+    if not new_plan:
+        raise HTTPException(status_code=404, detail="指定されたプランが見つかりません")
+    
+    # プラン変更実行
+    try:
+        result = subscription_service.change_plan(
+            db=db,
+            subscription=sub,
+            new_plan=new_plan,
+            promotion_code=req.promotion_code,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    logger.info(
+        f"プラン変更: user_id={user.id}, subscription_id={sub.id}, "
+        f"new_plan_id={new_plan.id}, change_type={result['change_type']}, "
+        f"applied={result['applied']}"
+    )
+    
+    return ChangePlanResponse(**result)
+
+
+class ValidatePromotionCodeRequest(BaseModel):
+    plan_id: int
+    code: str
+
+
+@router.post("/validate-promotion-code")
+async def validate_promotion_code_endpoint(
+    req: ValidatePromotionCodeRequest,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    """プロモーションコードの有効性を確認"""
+    is_valid, error_msg, promo = subscription_service.validate_promotion_code(db, req.code, req.plan_id)
+    
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+    
+    # 割引情報を返す
+    return {
+        "valid": True,
+        "code": promo.code,
+        "discount_type": promo.discount_type,
+        "discount_value": promo.discount_value,
+        "discount_display": (
+            f"{promo.discount_value}%OFF" if promo.discount_type == "percent_off"
+            else f"¥{promo.discount_value}OFF"
+        ),
+    }

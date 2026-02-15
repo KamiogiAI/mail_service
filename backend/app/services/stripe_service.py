@@ -167,18 +167,18 @@ def _get_or_create_portal_configurations() -> dict:
         trial_config_id = config.id
         logger.info(f"Billing Portal Configuration作成（トライアル用）: {config.id}")
     
-    # 通常用がなければ作成（初期はプラン変更無効、update_billing_portal_productsで有効化）
+    # 通常用がなければ作成（プラン変更はカスタムUIで行うため無効化）
     if not normal_config_id:
         normal_features = {
             **base_features,
-            "subscription_update": {"enabled": False},  # productsが必須なので初期は無効
+            "subscription_update": {"enabled": False},  # カスタムUIでプラン変更を行うため無効化
         }
         config = stripe.billing_portal.Configuration.create(
             features=normal_features,
             business_profile={"headline": "プランの管理"},
         )
         normal_config_id = config.id
-        logger.info(f"Billing Portal Configuration作成（通常用、初期状態）: {config.id}")
+        logger.info(f"Billing Portal Configuration作成（通常用）: {config.id}")
     
     _portal_config_cache["trial"] = trial_config_id
     _portal_config_cache["normal"] = normal_config_id
@@ -230,13 +230,19 @@ def resume_subscription(subscription_id: str):
     stripe.Subscription.modify(subscription_id, cancel_at_period_end=False)
 
 
-def update_subscription_plan(subscription_id: str, new_price_id: str, proration_behavior: str = "create_prorations"):
+def update_subscription_plan(
+    subscription_id: str,
+    new_price_id: str,
+    proration_behavior: str = "create_prorations",
+    promotion_code_id: Optional[str] = None,
+):
     """購読のプランを変更
     
     Args:
         subscription_id: Stripe Subscription ID
         new_price_id: 新しいStripe Price ID
         proration_behavior: 日割り計算の挙動 ("create_prorations", "none", "always_invoice")
+        promotion_code_id: Stripe Promotion Code ID（クーポン適用時）
     """
     _init_stripe()
     sub = stripe.Subscription.retrieve(subscription_id)
@@ -244,11 +250,19 @@ def update_subscription_plan(subscription_id: str, new_price_id: str, proration_
         raise ValueError("Subscription items not found")
     
     item_id = sub["items"]["data"][0]["id"]
-    stripe.Subscription.modify(
-        subscription_id,
-        items=[{"id": item_id, "price": new_price_id}],
-        proration_behavior=proration_behavior,
-    )
+    modify_params = {
+        "items": [{"id": item_id, "price": new_price_id}],
+        "proration_behavior": proration_behavior,
+    }
+    
+    # プロモーションコードが指定された場合、クーポンを適用
+    if promotion_code_id:
+        # Promotion CodeからCoupon IDを取得
+        promo = stripe.PromotionCode.retrieve(promotion_code_id)
+        if promo and promo.get("coupon"):
+            modify_params["coupon"] = promo["coupon"]["id"]
+    
+    stripe.Subscription.modify(subscription_id, **modify_params)
 
 
 def create_coupon(
@@ -371,8 +385,11 @@ def construct_webhook_event(payload: bytes, sig_header: str, secret: str):
 def update_billing_portal_products(products: list[dict]) -> bool:
     """Billing Portal Configuration（通常用）のプラン変更可能プロダクトを更新
     
+    注意: プラン変更はカスタムUIで行うため、常に無効化されます。
+    この関数は後方互換性のために残していますが、プラン変更の有効化は行いません。
+    
     Args:
-        products: [{"product": "prod_xxx", "prices": ["price_yyy"]}, ...]
+        products: [{"product": "prod_xxx", "prices": ["price_yyy"]}, ...] (現在は使用されません)
     
     Returns:
         bool: 成功したらTrue
@@ -384,19 +401,9 @@ def update_billing_portal_products(products: list[dict]) -> bool:
         configs = _get_or_create_portal_configurations()
         normal_config_id = configs["normal"]
         
-        # productsがある場合のみプラン変更を有効化
-        if products:
-            subscription_update = {
-                "enabled": True,
-                "default_allowed_updates": ["price", "promotion_code"],
-                "proration_behavior": "create_prorations",
-                "products": products,
-            }
-        else:
-            subscription_update = {"enabled": False}
-        
+        # プラン変更はカスタムUIで行うため常に無効化
         features = {
-            "subscription_update": subscription_update,
+            "subscription_update": {"enabled": False},
             "subscription_cancel": {
                 "enabled": True,
                 "mode": "at_period_end",
@@ -406,9 +413,9 @@ def update_billing_portal_products(products: list[dict]) -> bool:
         }
         
         stripe.billing_portal.Configuration.modify(normal_config_id, features=features)
-        logger.info(f"Billing Portal products更新（通常用）: {len(products)}プラン, enabled={bool(products)}")
+        logger.info(f"Billing Portal Configuration更新（通常用）: プラン変更=無効")
         
         return True
     except Exception as e:
-        logger.error(f"Billing Portal products更新失敗: {e}")
+        logger.error(f"Billing Portal Configuration更新失敗: {e}")
         return False

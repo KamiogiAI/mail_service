@@ -23,6 +23,20 @@ class SchedulePlanChangeRequest(BaseModel):
     new_plan_id: int
 
 
+class ChangePlanRequest(BaseModel):
+    subscription_id: int
+    new_plan_id: int
+    promotion_code: Optional[str] = None
+
+
+class ChangePlanResponse(BaseModel):
+    change_type: str  # "upgrade", "downgrade", "lateral", "to_free", "from_free"
+    applied: bool  # 即時適用されたか
+    effective_at: Optional[datetime] = None  # 予約の場合の適用日時
+    message: str
+    checkout_url: Optional[str] = None  # 無料→有料の場合のCheckout URL
+
+
 class SubscriptionInfo(BaseModel):
     id: int
     plan_id: int

@@ -201,43 +201,22 @@ function renderPlanCard(s) {
     </div>`;
 }
 
+// --- プラン変更（カスタムUI）---
+let _currentSub = null;  // プラン変更モーダル用
+
 async function showPlanChangeModal() {
     // モーダルが既にあれば削除
     const existing = document.getElementById('plan-change-modal');
     if (existing) existing.remove();
 
-    // 有料トライアル中のサブスクを確認（無料プラン price=0 は除外）
-    const trialSub = _subs.find(s => s.status === 'trialing' && s.plan_price > 0);
-    
-    if (trialSub) {
-        // 有料トライアル中: 予約UIを表示
-        await showTrialPlanChangeModal(trialSub);
-    } else {
-        // 通常 or 無料プラン: Billing Portalへ遷移（即時変更）
-        showNormalPlanChangeModal();
+    // アクティブなサブスクを取得
+    const activeSub = _subs.find(s => ['trialing', 'active', 'past_due'].includes(s.status));
+    if (!activeSub) {
+        alert('アクティブな購読がありません');
+        return;
     }
-}
+    _currentSub = activeSub;
 
-function showNormalPlanChangeModal() {
-    const modal = document.createElement('div');
-    modal.id = 'plan-change-modal';
-    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
-    modal.innerHTML = `
-        <div style="background:#fff;padding:24px;border-radius:12px;max-width:400px;width:90%;text-align:center;">
-            <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">プランを変更するには次の画面で<br>「<strong>サブスクリプションを更新</strong>」をタップしてください。</p>
-            <div style="display:flex;gap:12px;justify-content:center;">
-                <button class="d-btn d-btn-ghost d-btn-sm" onclick="closePlanChangeModal()">キャンセル</button>
-                <button class="d-btn d-btn-primary d-btn-sm" onclick="goToBillingPortal()">遷移する</button>
-            </div>
-        </div>
-    `;
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) closePlanChangeModal();
-    });
-    document.body.appendChild(modal);
-}
-
-async function showTrialPlanChangeModal(trialSub) {
     // プラン一覧を取得
     let plans = [];
     try {
@@ -248,40 +227,86 @@ async function showTrialPlanChangeModal(trialSub) {
     }
 
     // 現在のプランを除外
-    const otherPlans = plans.filter(p => p.id !== trialSub.plan_id);
+    const otherPlans = plans.filter(p => p.id !== activeSub.plan_id);
     if (otherPlans.length === 0) {
         alert('変更可能なプランがありません');
         return;
     }
 
-    const planOptions = otherPlans.map(p => `
-        <label style="display:block;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px;cursor:pointer;text-align:left;">
-            <input type="radio" name="new-plan" value="${p.id}" style="margin-right:8px;">
-            <strong>${esc(p.name)}</strong>
-            <span style="color:#666;margin-left:8px;">¥${p.price.toLocaleString()}/月</span>
-        </label>
-    `).join('');
+    // 変更種別の説明を生成
+    const getChangeInfo = (newPrice) => {
+        const currentPrice = activeSub.plan_price || 0;
+        const isTrialing = activeSub.status === 'trialing';
+        const isFreeTrialing = isTrialing && currentPrice === 0;
+        
+        if (currentPrice === 0 && newPrice > 0) {
+            // 無料→有料
+            if (isFreeTrialing) {
+                // 無料プラントライアル中 → 即時適用
+                return { type: 'from_free', label: '↑ 即時適用（課金開始）', disabled: false };
+            } else {
+                // 通常の無料プラン → Checkout経由
+                return { type: 'from_free', label: '※ プラン選択ページからお申し込みください', disabled: true };
+            }
+        } else if (newPrice > currentPrice) {
+            // アップグレード
+            if (isTrialing && currentPrice > 0) {
+                // 有料プラントライアル中 → 予約
+                const trialEndDate = activeSub.trial_end ? new Date(activeSub.trial_end).toLocaleDateString('ja-JP') : '-';
+                return { type: 'upgrade', label: `↑ ${trialEndDate}から適用`, disabled: false };
+            } else {
+                return { type: 'upgrade', label: '↑ 即時適用（日割り差額請求）', disabled: false };
+            }
+        } else if (newPrice < currentPrice) {
+            // ダウングレード
+            if (isTrialing) {
+                const trialEndDate = activeSub.trial_end ? new Date(activeSub.trial_end).toLocaleDateString('ja-JP') : '-';
+                return { type: 'downgrade', label: `↓ ${trialEndDate}から適用`, disabled: false };
+            } else {
+                const periodEndDate = activeSub.current_period_end ? new Date(activeSub.current_period_end).toLocaleDateString('ja-JP') : '-';
+                return { type: 'downgrade', label: `↓ ${periodEndDate}から適用（またはプロモーションコードで即時）`, disabled: false };
+            }
+        } else {
+            // 同額
+            return { type: 'lateral', label: '→ 即時適用', disabled: false };
+        }
+    };
 
-    const trialEndDate = trialSub.trial_end ? new Date(trialSub.trial_end).toLocaleDateString('ja-JP') : '-';
+    const planOptions = otherPlans.map(p => {
+        const info = getChangeInfo(p.price);
+        return `
+            <label style="display:block;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px;cursor:${info.disabled ? 'not-allowed' : 'pointer'};text-align:left;${info.disabled ? 'opacity:0.6;' : ''}">
+                <input type="radio" name="new-plan" value="${p.id}" data-price="${p.price}" style="margin-right:8px;" ${info.disabled ? 'disabled' : ''}>
+                <strong>${esc(p.name)}</strong>
+                <span style="color:#666;margin-left:8px;">${p.price === 0 ? '無料' : '¥' + p.price.toLocaleString() + '/月'}</span>
+                <div style="font-size:12px;color:#888;margin-top:4px;margin-left:20px;">${info.label}</div>
+            </label>
+        `;
+    }).join('');
 
     const modal = document.createElement('div');
     modal.id = 'plan-change-modal';
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:flex-start;justify-content:center;z-index:1000;overflow-y:auto;padding:60px 0 100px;box-sizing:border-box;';
     modal.innerHTML = `
         <div style="background:#fff;padding:24px;border-radius:12px;max-width:450px;width:90%;margin:0 20px;">
-            <h3 style="margin:0 0 8px;font-size:18px;">プラン変更予約</h3>
-            <p style="margin:0 0 16px;font-size:14px;color:#666;">
-                トライアル終了時（${trialEndDate}）に変更されます
-            </p>
+            <h3 style="margin:0 0 8px;font-size:18px;">プラン変更</h3>
             <div style="margin-bottom:16px;">
-                <div style="font-size:13px;color:#888;margin-bottom:8px;">現在のプラン: <strong>${esc(trialSub.plan_name)}</strong></div>
+                <div style="font-size:13px;color:#888;margin-bottom:8px;">現在のプラン: <strong>${esc(activeSub.plan_name)}</strong> (${activeSub.plan_price === 0 ? '無料' : '¥' + activeSub.plan_price.toLocaleString() + '/月'})</div>
                 <div style="font-size:14px;margin-bottom:8px;">変更先を選択:</div>
                 ${planOptions}
             </div>
-            <div id="schedule-error" style="color:#dc3545;font-size:13px;margin-bottom:12px;display:none;"></div>
+            <div style="margin-bottom:16px;">
+                <label style="font-size:13px;color:#666;">プロモーションコード（お持ちの場合）</label>
+                <div style="display:flex;gap:8px;margin-top:4px;">
+                    <input type="text" id="promo-code-input" placeholder="コードを入力" style="flex:1;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                    <button class="d-btn d-btn-secondary d-btn-sm" onclick="validatePromoCode()">確認</button>
+                </div>
+                <div id="promo-code-result" style="font-size:12px;margin-top:4px;"></div>
+            </div>
+            <div id="plan-change-error" style="color:#dc3545;font-size:13px;margin-bottom:12px;display:none;"></div>
             <div style="display:flex;gap:12px;justify-content:center;">
                 <button class="d-btn d-btn-ghost d-btn-sm" onclick="closePlanChangeModal()">キャンセル</button>
-                <button class="d-btn d-btn-primary d-btn-sm" onclick="submitPlanChangeSchedule(${trialSub.id})">予約する</button>
+                <button class="d-btn d-btn-primary d-btn-sm" id="plan-change-submit-btn" onclick="submitPlanChange()">変更する</button>
             </div>
         </div>
     `;
@@ -291,6 +316,83 @@ async function showTrialPlanChangeModal(trialSub) {
     document.body.appendChild(modal);
 }
 
+async function validatePromoCode() {
+    const code = document.getElementById('promo-code-input').value.trim();
+    const resultEl = document.getElementById('promo-code-result');
+    const selected = document.querySelector('input[name="new-plan"]:checked');
+    
+    if (!code) {
+        resultEl.innerHTML = '<span style="color:#dc3545;">コードを入力してください</span>';
+        return;
+    }
+    
+    if (!selected) {
+        resultEl.innerHTML = '<span style="color:#dc3545;">先にプランを選択してください</span>';
+        return;
+    }
+    
+    const planId = parseInt(selected.value);
+    
+    try {
+        const res = await API.post('/api/validate-promotion-code', {
+            plan_id: planId,
+            code: code,
+        });
+        resultEl.innerHTML = `<span style="color:#28a745;">✓ ${esc(res.discount_display)} 適用可能</span>`;
+    } catch (e) {
+        resultEl.innerHTML = `<span style="color:#dc3545;">✗ ${esc(e.message)}</span>`;
+    }
+}
+
+async function submitPlanChange() {
+    const selected = document.querySelector('input[name="new-plan"]:checked');
+    const errorEl = document.getElementById('plan-change-error');
+    const submitBtn = document.getElementById('plan-change-submit-btn');
+    
+    if (!selected) {
+        errorEl.textContent = 'プランを選択してください';
+        errorEl.style.display = 'block';
+        return;
+    }
+    
+    const newPlanId = parseInt(selected.value);
+    const promoCode = document.getElementById('promo-code-input').value.trim() || null;
+    
+    // 確認ダイアログ
+    const newPrice = parseInt(selected.dataset.price);
+    const currentPrice = _currentSub.plan_price || 0;
+    const isUpgrade = newPrice > currentPrice;
+    const isDowngradeWithPromo = newPrice < currentPrice && promoCode;
+    
+    if (isUpgrade || isDowngradeWithPromo) {
+        const action = isUpgrade ? 'アップグレード' : 'ダウングレード（プロモーションコード適用）';
+        if (!confirm(`${action}すると即時に日割り計算で請求/返金が発生します。続行しますか？`)) {
+            return;
+        }
+    }
+    
+    submitBtn.disabled = true;
+    submitBtn.textContent = '処理中...';
+    
+    try {
+        const res = await API.post('/api/change-plan', {
+            subscription_id: _currentSub.id,
+            new_plan_id: newPlanId,
+            promotion_code: promoCode,
+        });
+        
+        closePlanChangeModal();
+        alert(res.message);
+        await loadPlanCards();
+    } catch (e) {
+        errorEl.textContent = e.message;
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = '変更する';
+    }
+}
+
+// 旧API用（後方互換）
 async function submitPlanChangeSchedule(subscriptionId) {
     const selected = document.querySelector('input[name="new-plan"]:checked');
     if (!selected) {

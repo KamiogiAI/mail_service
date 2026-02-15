@@ -344,9 +344,30 @@ def apply_scheduled_plan_changes(db: Session, now: datetime):
         Subscription.status.in_(["trialing", "active", "past_due", "admin_added"]),
     ).all()
 
+    applied_count = 0
     for sub in subs:
         old_plan_id = sub.plan_id
         new_plan_id = sub.scheduled_plan_id
+        
+        # 新プランを取得
+        new_plan = db.query(Plan).filter(Plan.id == new_plan_id).first()
+        if not new_plan:
+            logger.warning(f"予約プラン変更スキップ: プランが見つからない subscription_id={sub.id}, new_plan_id={new_plan_id}")
+            sub.scheduled_plan_id = None
+            sub.scheduled_change_at = None
+            continue
+        
+        # Stripeでプラン変更を実行（日割りなし）
+        if sub.stripe_subscription_id and new_plan.stripe_price_id:
+            try:
+                stripe_service.update_subscription_plan(
+                    subscription_id=sub.stripe_subscription_id,
+                    new_price_id=new_plan.stripe_price_id,
+                    proration_behavior="none",  # 期間終了時なので日割りなし
+                )
+            except Exception as e:
+                logger.error(f"予約プラン変更Stripe更新失敗: subscription_id={sub.id}, error={e}")
+                # Stripe更新失敗しても続行（DB更新で整合性を保つ）
 
         sub.plan_id = new_plan_id
         sub.scheduled_plan_id = None
@@ -372,10 +393,13 @@ def apply_scheduled_plan_changes(db: Session, now: datetime):
             else:
                 logger.warning(f"クーポン削除失敗: subscription_id={sub.id}")
 
-        logger.info(f"ダウングレード適用: subscription_id={sub.id}, plan {old_plan_id} → {new_plan_id}")
+        logger.info(f"予約プラン変更適用: subscription_id={sub.id}, plan {old_plan_id} → {new_plan_id}")
+        applied_count += 1
 
     if subs:
         db.commit()
+    
+    return applied_count
 
     return len(subs)
 
@@ -621,3 +645,337 @@ def _execute_scheduled_plan_change(db: Session, sub: Subscription):
         sub.scheduled_plan_id = None
         sub.scheduled_change_at = None
         db.commit()
+
+
+# =========================================================
+# カスタムUIからのプラン変更
+# =========================================================
+
+def validate_promotion_code(
+    db: Session,
+    code: str,
+    plan_id: int,
+) -> tuple[bool, str, PromotionCode | None]:
+    """プロモーションコードの有効性を検証
+    
+    Returns:
+        (is_valid, error_message, promo_code_object)
+    """
+    promo = db.query(PromotionCode).filter(
+        PromotionCode.code == code,
+    ).first()
+    
+    if not promo:
+        return False, "プロモーションコードが見つかりません", None
+    
+    if not promo.is_active:
+        return False, "このプロモーションコードは無効です", None
+    
+    if promo.expires_at and promo.expires_at < datetime.now():
+        return False, "このプロモーションコードは有効期限切れです", None
+    
+    if promo.max_redemptions and promo.times_redeemed >= promo.max_redemptions:
+        return False, "このプロモーションコードは使用回数の上限に達しています", None
+    
+    # 対象プランチェック
+    if promo.eligible_plan_ids and plan_id not in [int(pid) for pid in promo.eligible_plan_ids]:
+        return False, "このプロモーションコードはこのプランには適用できません", None
+    
+    return True, "", promo
+
+
+def change_plan(
+    db: Session,
+    subscription: Subscription,
+    new_plan: Plan,
+    promotion_code: str | None = None,
+) -> dict:
+    """カスタムUIからのプラン変更を処理
+    
+    Args:
+        db: DBセッション
+        subscription: 変更対象のサブスクリプション
+        new_plan: 変更先のプラン
+        promotion_code: プロモーションコード（オプション）
+    
+    Returns:
+        {
+            "change_type": str,
+            "applied": bool,
+            "effective_at": datetime | None,
+            "message": str,
+        }
+    """
+    old_plan = db.query(Plan).filter(Plan.id == subscription.plan_id).first()
+    if not old_plan:
+        raise ValueError("現在のプランが見つかりません")
+    
+    # 同じプランへの変更は不可
+    if old_plan.id == new_plan.id:
+        raise ValueError("現在と同じプランには変更できません")
+    
+    # 変更種別を判定
+    if old_plan.price == 0 and new_plan.price > 0:
+        change_type = "from_free"
+    elif old_plan.price > 0 and new_plan.price == 0:
+        change_type = "to_free"
+    elif new_plan.price > old_plan.price:
+        change_type = "upgrade"
+    elif new_plan.price < old_plan.price:
+        change_type = "downgrade"
+    else:
+        change_type = "lateral"
+    
+    # プロモーションコードの検証
+    promo = None
+    stripe_promo_id = None
+    if promotion_code:
+        is_valid, error_msg, promo = validate_promotion_code(db, promotion_code, new_plan.id)
+        if not is_valid:
+            raise ValueError(error_msg)
+        stripe_promo_id = promo.stripe_promotion_code_id
+    
+    # トライアル中の場合
+    if subscription.status == "trialing":
+        # 無料プラン（price=0）のトライアル中 → 有料プランへの変更は即時
+        if old_plan.price == 0 and new_plan.price > 0:
+            return _apply_plan_change_immediately_custom(
+                db, subscription, old_plan, new_plan, change_type, promo, stripe_promo_id
+            )
+        # 有料プラン（price>0）のトライアル中 → 予約
+        return _schedule_plan_change_for_trial(
+            db, subscription, old_plan, new_plan, change_type, promo
+        )
+    
+    # 無料→有料（通常状態）はCheckout経由を促す
+    if change_type == "from_free":
+        raise ValueError("無料プランから有料プランへの変更は、プラン選択ページからお申し込みください")
+    
+    # アップグレード: 即時（日割り）
+    if change_type == "upgrade":
+        return _apply_plan_change_immediately_custom(
+            db, subscription, old_plan, new_plan, change_type, promo, stripe_promo_id
+        )
+    
+    # ダウングレード: プロモーションコードありなら即時、なしなら予約
+    if change_type == "downgrade":
+        if promo:
+            # プロモーションコードあり → 即時（日割り）
+            return _apply_plan_change_immediately_custom(
+                db, subscription, old_plan, new_plan, change_type, promo, stripe_promo_id
+            )
+        else:
+            # プロモーションコードなし → 期間終了時予約
+            return _schedule_plan_change_for_downgrade(
+                db, subscription, old_plan, new_plan, change_type
+            )
+    
+    # 有料→無料: 期間終了時予約
+    if change_type == "to_free":
+        return _schedule_plan_change_for_downgrade(
+            db, subscription, old_plan, new_plan, change_type
+        )
+    
+    # 同額: 即時
+    if change_type == "lateral":
+        return _apply_plan_change_immediately_custom(
+            db, subscription, old_plan, new_plan, change_type, promo, stripe_promo_id
+        )
+    
+    raise ValueError("不明なプラン変更種別です")
+
+
+def _schedule_plan_change_for_trial(
+    db: Session,
+    sub: Subscription,
+    old_plan: Plan,
+    new_plan: Plan,
+    change_type: str,
+    promo: PromotionCode | None,
+) -> dict:
+    """トライアル中のプラン変更予約"""
+    # 既存の予約をキャンセル
+    _cancel_pending_plan_changes(db, sub.id)
+    
+    sub.scheduled_plan_id = new_plan.id
+    sub.scheduled_change_at = sub.trial_end
+    
+    # 変更履歴記録
+    change = SubscriptionPlanChange(
+        subscription_id=sub.id,
+        old_plan_id=old_plan.id,
+        new_plan_id=new_plan.id,
+        change_type=change_type,
+        effective_at=sub.trial_end,
+        applied=False,
+    )
+    db.add(change)
+    db.commit()
+    
+    effective_date = sub.trial_end.astimezone(JST).strftime("%Y年%m月%d日") if sub.trial_end else "-"
+    
+    logger.info(
+        f"トライアル中プラン変更予約: subscription_id={sub.id}, "
+        f"{old_plan.name} → {new_plan.name}, 適用予定={effective_date}"
+    )
+    
+    # メール通知
+    user = db.query(User).filter(User.id == sub.user_id).first()
+    if user:
+        send_plan_change_email(
+            to_email=user.email,
+            name=f"{user.name_last} {user.name_first}",
+            old_plan_name=old_plan.name,
+            new_plan_name=new_plan.name,
+            new_plan_price=new_plan.price,
+            change_date=effective_date,
+            is_immediate=False,
+        )
+    
+    return {
+        "change_type": change_type,
+        "applied": False,
+        "effective_at": sub.trial_end,
+        "message": f"トライアル終了時（{effective_date}）に「{new_plan.name}」へ変更されます",
+    }
+
+
+def _schedule_plan_change_for_downgrade(
+    db: Session,
+    sub: Subscription,
+    old_plan: Plan,
+    new_plan: Plan,
+    change_type: str,
+) -> dict:
+    """ダウングレード/有料→無料の予約（期間終了時）"""
+    # 既存の予約をキャンセル
+    _cancel_pending_plan_changes(db, sub.id)
+    
+    sub.scheduled_plan_id = new_plan.id
+    sub.scheduled_change_at = sub.current_period_end
+    
+    # 変更履歴記録
+    change = SubscriptionPlanChange(
+        subscription_id=sub.id,
+        old_plan_id=old_plan.id,
+        new_plan_id=new_plan.id,
+        change_type=change_type,
+        effective_at=sub.current_period_end,
+        applied=False,
+    )
+    db.add(change)
+    db.commit()
+    
+    effective_date = sub.current_period_end.astimezone(JST).strftime("%Y年%m月%d日") if sub.current_period_end else "-"
+    
+    logger.info(
+        f"プラン変更予約: subscription_id={sub.id}, "
+        f"{old_plan.name} → {new_plan.name}, 適用予定={effective_date}"
+    )
+    
+    # メール通知
+    user = db.query(User).filter(User.id == sub.user_id).first()
+    if user:
+        send_plan_change_email(
+            to_email=user.email,
+            name=f"{user.name_last} {user.name_first}",
+            old_plan_name=old_plan.name,
+            new_plan_name=new_plan.name,
+            new_plan_price=new_plan.price,
+            change_date=effective_date,
+            is_immediate=False,
+        )
+    
+    return {
+        "change_type": change_type,
+        "applied": False,
+        "effective_at": sub.current_period_end,
+        "message": f"次回更新日（{effective_date}）に「{new_plan.name}」へ変更されます",
+    }
+
+
+def _apply_plan_change_immediately_custom(
+    db: Session,
+    sub: Subscription,
+    old_plan: Plan,
+    new_plan: Plan,
+    change_type: str,
+    promo: PromotionCode | None,
+    stripe_promo_id: str | None,
+) -> dict:
+    """即時プラン変更（日割り）"""
+    # Stripeでプラン変更
+    if not sub.stripe_subscription_id:
+        raise ValueError("Stripe連携されていないサブスクリプションです")
+    
+    if not new_plan.stripe_price_id:
+        raise ValueError("変更先プランのStripe Price IDがありません")
+    
+    try:
+        stripe_service.update_subscription_plan(
+            subscription_id=sub.stripe_subscription_id,
+            new_price_id=new_plan.stripe_price_id,
+            proration_behavior="create_prorations",
+            promotion_code_id=stripe_promo_id,
+        )
+    except Exception as e:
+        logger.error(f"Stripeプラン変更失敗: subscription_id={sub.id}, error={e}")
+        raise ValueError(f"プラン変更に失敗しました: {e}")
+    
+    # プロモーションコードの使用数を更新
+    if promo:
+        promo.times_redeemed = (promo.times_redeemed or 0) + 1
+        logger.info(f"プロモーションコード使用: code={promo.code}, times_redeemed={promo.times_redeemed}")
+    
+    # DB更新
+    old_plan_id = sub.plan_id
+    sub.plan_id = new_plan.id
+    sub.scheduled_plan_id = None
+    sub.scheduled_change_at = None
+    
+    # 既存の予約をキャンセル
+    _cancel_pending_plan_changes(db, sub.id)
+    
+    # 変更履歴記録
+    change = SubscriptionPlanChange(
+        subscription_id=sub.id,
+        old_plan_id=old_plan_id,
+        new_plan_id=new_plan.id,
+        change_type=change_type,
+        applied=True,
+    )
+    db.add(change)
+    db.commit()
+    
+    # 回答引き継ぎ
+    if sub.user_id:
+        migrate_answers_on_plan_change(db, sub.user_id, old_plan_id, new_plan.id)
+    
+    today = datetime.now(JST).strftime("%Y年%m月%d日")
+    
+    logger.info(
+        f"プラン変更適用: subscription_id={sub.id}, "
+        f"{old_plan.name} → {new_plan.name} [{change_type}]"
+        f"{f', promo={promo.code}' if promo else ''}"
+    )
+    
+    # メール通知
+    user = db.query(User).filter(User.id == sub.user_id).first()
+    if user:
+        send_plan_change_email(
+            to_email=user.email,
+            name=f"{user.name_last} {user.name_first}",
+            old_plan_name=old_plan.name,
+            new_plan_name=new_plan.name,
+            new_plan_price=new_plan.price,
+            change_date=today,
+            is_immediate=True,
+        )
+    
+    promo_msg = f"（{promo.code}適用）" if promo else ""
+    return {
+        "change_type": change_type,
+        "applied": True,
+        "effective_at": None,
+        "message": f"「{new_plan.name}」へ変更しました{promo_msg}",
+    }
