@@ -107,6 +107,14 @@ def update_subscription_from_stripe(
 
     sub.status = status
     sub.cancel_at_period_end = cancel_at_period_end
+    
+    # キャンセル操作時は予約変更をクリア（次回更新で請求されないように）
+    if cancel_at_period_end and sub.scheduled_plan_id:
+        logger.info(f"キャンセル操作により予約変更をクリア: subscription_id={sub.id}, scheduled_plan_id={sub.scheduled_plan_id}")
+        _cancel_pending_plan_changes(db, sub.id)
+        sub.scheduled_plan_id = None
+        sub.scheduled_change_at = None
+    
     if current_period_start:
         sub.current_period_start = current_period_start
     if current_period_end:
