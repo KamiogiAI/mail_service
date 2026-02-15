@@ -268,7 +268,13 @@ async function showPlanChangeModal() {
             }
         } else {
             // 同額
-            return { type: 'lateral', label: '→ 即時適用', disabled: false };
+            if (isTrialing && currentPrice > 0) {
+                // 有料プラントライアル中 → 予約
+                const trialEndDate = activeSub.trial_end ? new Date(activeSub.trial_end).toLocaleDateString('ja-JP') : '-';
+                return { type: 'lateral', label: `→ ${trialEndDate}から適用`, disabled: false };
+            } else {
+                return { type: 'lateral', label: '→ 即時適用', disabled: false };
+            }
         }
     };
 
