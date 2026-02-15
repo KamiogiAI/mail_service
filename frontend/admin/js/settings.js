@@ -16,6 +16,12 @@ const SettingsPage = {
             document.getElementById('settings-form').classList.remove('loading');
             document.getElementById('settings-form').innerHTML = `
                 <div class="card">
+                    <div class="card-header"><h2>アカウント設定</h2></div>
+                    <div class="form-group">
+                        <a href="/form/user/password.html" target="_blank" class="btn" style="display:inline-block;">パスワードを変更する</a>
+                    </div>
+                </div>
+                <div class="card">
                     <div class="card-header"><h2>基本設定</h2></div>
                     <div class="form-group"><label>サイト名</label><input id="set-site-name" value="${s.site_name || ''}"></div>
                     <div class="form-group"><label>サイトURL</label><input id="set-site-url" value="${s.site_url || ''}"></div>
