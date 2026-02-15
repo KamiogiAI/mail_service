@@ -139,7 +139,7 @@ function renderPlanCard(s) {
     const isAdminAdded = s.status === 'admin_added';
     const isActive = ['active', 'trialing', 'past_due'].includes(s.status) && !s.cancel_at_period_end;
     const showCancel = isActive && !isAdminAdded;
-    const isPastDue = s.status === 'past_due';
+    const hasPaymentIssue = s.has_payment_issue;
 
     // ダウングレード予約表示
     let scheduledHtml = '';
@@ -151,10 +151,10 @@ function renderPlanCard(s) {
         </div>`;
     }
 
-    // past_due 警告メッセージ
-    let pastDueHtml = '';
-    if (isPastDue) {
-        pastDueHtml = `
+    // 決済問題の警告メッセージ
+    let paymentIssueHtml = '';
+    if (hasPaymentIssue) {
+        paymentIssueHtml = `
         <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#856404;">
             お支払いが確認できていません。配信が一時停止されています。<br>
             <a href="javascript:void(0)" onclick="openBillingPortal()" style="color:#0056b3;">お支払い情報を更新する</a>
@@ -189,7 +189,7 @@ function renderPlanCard(s) {
             </div>` : ''}
             ${scheduledHtml}
         </div>
-        ${pastDueHtml}
+        ${paymentIssueHtml}
         ${showCancel ? `
         <div class="plan-actions">
             <button class="d-btn d-btn-secondary d-btn-sm" onclick="showPlanChangeModal()">プラン変更</button>
