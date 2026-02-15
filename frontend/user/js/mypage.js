@@ -367,12 +367,28 @@ async function submitPlanChange() {
     // 確認ダイアログ
     const newPrice = parseInt(selected.dataset.price);
     const currentPrice = _currentSub.plan_price || 0;
+    const isTrialing = _currentSub.status === 'trialing';
+    const isPaidTrialing = isTrialing && currentPrice > 0;
+    const isFreeTrialing = isTrialing && currentPrice === 0;
+    
     const isUpgrade = newPrice > currentPrice;
     const isDowngradeWithPromo = newPrice < currentPrice && promoCode;
     
-    if (isUpgrade || isDowngradeWithPromo) {
-        const action = isUpgrade ? 'アップグレード' : 'ダウングレード（プロモーションコード適用）';
-        if (!confirm(`${action}すると即時に日割り計算で請求/返金が発生します。続行しますか？`)) {
+    // 即時請求が発生するケース（有料トライアル中は予約なので除外）
+    const willChargeImmediately = 
+        (!isPaidTrialing && isUpgrade) ||
+        (!isPaidTrialing && isDowngradeWithPromo) ||
+        (isFreeTrialing && newPrice > 0);
+    
+    if (willChargeImmediately) {
+        let message;
+        if (isFreeTrialing && newPrice > 0) {
+            message = '有料プランへの変更で課金が開始されます。続行しますか？';
+        } else {
+            const action = isUpgrade ? 'アップグレード' : 'ダウングレード（プロモーションコード適用）';
+            message = `${action}すると即時に日割り計算で請求/返金が発生します。続行しますか？`;
+        }
+        if (!confirm(message)) {
             return;
         }
     }
