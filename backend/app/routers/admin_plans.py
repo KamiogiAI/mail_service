@@ -234,18 +234,17 @@ async def create_plan(data: PlanCreate, db: Session = Depends(get_db), _=Depends
         trial_enabled=data.trial_enabled,
     )
 
-    # Stripe Product/Price作成
-    if data.price > 0:
-        try:
-            product_id, price_id = stripe_service.create_product_and_price(
-                name=data.name,
-                description=data.description or "",
-                price_yen=data.price,
-            )
-            plan.stripe_product_id = product_id
-            plan.stripe_price_id = price_id
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Stripe連携エラー: {e}")
+    # Stripe Product/Price作成（無料プランも含む）
+    try:
+        product_id, price_id = stripe_service.create_product_and_price(
+            name=data.name,
+            description=data.description or "",
+            price_yen=data.price,
+        )
+        plan.stripe_product_id = product_id
+        plan.stripe_price_id = price_id
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stripe連携エラー: {e}")
 
     db.add(plan)
     db.commit()
