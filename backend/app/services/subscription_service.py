@@ -742,6 +742,11 @@ def change_plan(
             return _apply_plan_change_immediately_custom(
                 db, subscription, old_plan, new_plan, change_type, promo, stripe_promo_id
             )
+        # 無料→無料（lateral）も即時適用
+        if old_plan.price == 0 and new_plan.price == 0:
+            return _apply_plan_change_immediately_custom(
+                db, subscription, old_plan, new_plan, change_type, promo, stripe_promo_id
+            )
         # 有料プラン（price>0）のトライアル中 → 予約
         return _schedule_plan_change_for_trial(
             db, subscription, old_plan, new_plan, change_type, promo
