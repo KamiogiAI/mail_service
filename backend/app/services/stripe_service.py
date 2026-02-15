@@ -230,6 +230,27 @@ def resume_subscription(subscription_id: str):
     stripe.Subscription.modify(subscription_id, cancel_at_period_end=False)
 
 
+def update_subscription_plan(subscription_id: str, new_price_id: str, proration_behavior: str = "create_prorations"):
+    """購読のプランを変更
+    
+    Args:
+        subscription_id: Stripe Subscription ID
+        new_price_id: 新しいStripe Price ID
+        proration_behavior: 日割り計算の挙動 ("create_prorations", "none", "always_invoice")
+    """
+    _init_stripe()
+    sub = stripe.Subscription.retrieve(subscription_id)
+    if not sub or not sub.get("items") or not sub["items"].get("data"):
+        raise ValueError("Subscription items not found")
+    
+    item_id = sub["items"]["data"][0]["id"]
+    stripe.Subscription.modify(
+        subscription_id,
+        items=[{"id": item_id, "price": new_price_id}],
+        proration_behavior=proration_behavior,
+    )
+
+
 def create_coupon(
     discount_type: str,
     discount_value: int,

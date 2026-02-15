@@ -18,6 +18,11 @@ class BillingPortalRequest(BaseModel):
     return_url: Optional[str] = None
 
 
+class SchedulePlanChangeRequest(BaseModel):
+    subscription_id: int
+    new_plan_id: int
+
+
 class SubscriptionInfo(BaseModel):
     id: int
     plan_id: int

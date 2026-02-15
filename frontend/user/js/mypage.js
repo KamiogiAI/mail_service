@@ -147,7 +147,10 @@ function renderPlanCard(s) {
         scheduledHtml = `
         <div class="meta-item" style="border-top:1px solid #eee;padding-top:8px;margin-top:4px;">
             <div class="meta-label">プラン変更予定</div>
-            <div class="meta-value">${esc(s.scheduled_plan_name)} (${fmtDate(s.scheduled_change_at)}〜)</div>
+            <div class="meta-value">
+                ${esc(s.scheduled_plan_name)} (${fmtDate(s.scheduled_change_at)}〜)
+                <button class="d-btn d-btn-ghost d-btn-xs" style="margin-left:8px;font-size:11px;" onclick="cancelScheduledPlanChange(${s.id})">取消</button>
+            </div>
         </div>`;
     }
 
@@ -198,11 +201,24 @@ function renderPlanCard(s) {
     </div>`;
 }
 
-function showPlanChangeModal() {
+async function showPlanChangeModal() {
     // モーダルが既にあれば削除
     const existing = document.getElementById('plan-change-modal');
     if (existing) existing.remove();
 
+    // トライアル中のサブスクを確認
+    const trialSub = _subs.find(s => s.status === 'trialing');
+    
+    if (trialSub) {
+        // トライアル中: 予約UIを表示
+        await showTrialPlanChangeModal(trialSub);
+    } else {
+        // 通常: Billing Portalへ遷移するモーダル
+        showNormalPlanChangeModal();
+    }
+}
+
+function showNormalPlanChangeModal() {
     const modal = document.createElement('div');
     modal.id = 'plan-change-modal';
     modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
@@ -219,6 +235,93 @@ function showPlanChangeModal() {
         if (e.target === modal) closePlanChangeModal();
     });
     document.body.appendChild(modal);
+}
+
+async function showTrialPlanChangeModal(trialSub) {
+    // プラン一覧を取得
+    let plans = [];
+    try {
+        plans = await API.get('/api/plans');
+    } catch (e) {
+        alert('プラン一覧の取得に失敗しました');
+        return;
+    }
+
+    // 現在のプランを除外
+    const otherPlans = plans.filter(p => p.id !== trialSub.plan_id);
+    if (otherPlans.length === 0) {
+        alert('変更可能なプランがありません');
+        return;
+    }
+
+    const planOptions = otherPlans.map(p => `
+        <label style="display:block;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px;cursor:pointer;text-align:left;">
+            <input type="radio" name="new-plan" value="${p.id}" style="margin-right:8px;">
+            <strong>${esc(p.name)}</strong>
+            <span style="color:#666;margin-left:8px;">¥${p.price.toLocaleString()}/月</span>
+        </label>
+    `).join('');
+
+    const trialEndDate = trialSub.trial_end ? new Date(trialSub.trial_end).toLocaleDateString('ja-JP') : '-';
+
+    const modal = document.createElement('div');
+    modal.id = 'plan-change-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;overflow-y:auto;';
+    modal.innerHTML = `
+        <div style="background:#fff;padding:24px;border-radius:12px;max-width:450px;width:90%;margin:20px;">
+            <h3 style="margin:0 0 8px;font-size:18px;">プラン変更予約</h3>
+            <p style="margin:0 0 16px;font-size:14px;color:#666;">
+                トライアル終了時（${trialEndDate}）に変更されます
+            </p>
+            <div style="margin-bottom:16px;">
+                <div style="font-size:13px;color:#888;margin-bottom:8px;">現在のプラン: <strong>${esc(trialSub.plan_name)}</strong></div>
+                <div style="font-size:14px;margin-bottom:8px;">変更先を選択:</div>
+                ${planOptions}
+            </div>
+            <div id="schedule-error" style="color:#dc3545;font-size:13px;margin-bottom:12px;display:none;"></div>
+            <div style="display:flex;gap:12px;justify-content:center;">
+                <button class="d-btn d-btn-ghost d-btn-sm" onclick="closePlanChangeModal()">キャンセル</button>
+                <button class="d-btn d-btn-primary d-btn-sm" onclick="submitPlanChangeSchedule(${trialSub.id})">予約する</button>
+            </div>
+        </div>
+    `;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closePlanChangeModal();
+    });
+    document.body.appendChild(modal);
+}
+
+async function submitPlanChangeSchedule(subscriptionId) {
+    const selected = document.querySelector('input[name="new-plan"]:checked');
+    if (!selected) {
+        document.getElementById('schedule-error').textContent = 'プランを選択してください';
+        document.getElementById('schedule-error').style.display = 'block';
+        return;
+    }
+
+    const newPlanId = parseInt(selected.value);
+    try {
+        const res = await API.post('/api/schedule-plan-change', {
+            subscription_id: subscriptionId,
+            new_plan_id: newPlanId,
+        });
+        closePlanChangeModal();
+        alert(res.message);
+        await loadPlanCards();
+    } catch (e) {
+        document.getElementById('schedule-error').textContent = e.message;
+        document.getElementById('schedule-error').style.display = 'block';
+    }
+}
+
+async function cancelScheduledPlanChange(subscriptionId) {
+    if (!confirm('プラン変更予約をキャンセルしますか？')) return;
+    try {
+        await API.del(`/api/cancel-scheduled-plan-change/${subscriptionId}`);
+        await loadPlanCards();
+    } catch (e) {
+        alert(e.message);
+    }
 }
 
 function closePlanChangeModal() {

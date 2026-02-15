@@ -13,6 +13,7 @@ from app.models.promotion_code import PromotionCode
 from app.models.subscription import Subscription
 from app.schemas.subscription import (
     SubscribeRequest, BillingPortalRequest, SubscriptionInfo, CheckoutCompleteRequest,
+    SchedulePlanChangeRequest,
 )
 from app.services import stripe_service, subscription_service
 from app.routers.deps import require_login
@@ -350,3 +351,70 @@ async def cancel_subscription(
         )
 
     return {"message": "解約予約しました。期間終了まで引き続きご利用いただけます。"}
+
+
+@router.post("/schedule-plan-change")
+async def schedule_plan_change(
+    req: SchedulePlanChangeRequest,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    """トライアル中のプラン変更予約（トライアル終了時に変更）"""
+    sub = db.query(Subscription).filter(
+        Subscription.id == req.subscription_id,
+        Subscription.user_id == user.id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="購読が見つかりません")
+
+    # トライアル中かどうか確認
+    if sub.status != "trialing":
+        raise HTTPException(status_code=400, detail="トライアル中のみプラン変更予約が可能です")
+
+    # 新しいプランの確認
+    new_plan = db.query(Plan).filter(Plan.id == req.new_plan_id, Plan.is_active == True).first()
+    if not new_plan:
+        raise HTTPException(status_code=404, detail="指定されたプランが見つかりません")
+
+    # 同じプランへの変更は不可
+    if sub.plan_id == req.new_plan_id:
+        raise HTTPException(status_code=400, detail="現在と同じプランには変更できません")
+
+    # 予約を設定
+    sub.scheduled_plan_id = req.new_plan_id
+    sub.scheduled_change_at = sub.trial_end  # トライアル終了時に変更
+    db.commit()
+
+    logger.info(f"プラン変更予約: user_id={user.id}, subscription_id={sub.id}, new_plan_id={req.new_plan_id}")
+
+    return {
+        "message": f"トライアル終了時に「{new_plan.name}」へ変更予約しました",
+        "scheduled_plan_name": new_plan.name,
+        "scheduled_change_at": sub.scheduled_change_at,
+    }
+
+
+@router.delete("/cancel-scheduled-plan-change/{subscription_id}")
+async def cancel_scheduled_plan_change(
+    subscription_id: int,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    """プラン変更予約のキャンセル"""
+    sub = db.query(Subscription).filter(
+        Subscription.id == subscription_id,
+        Subscription.user_id == user.id,
+    ).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="購読が見つかりません")
+
+    if not sub.scheduled_plan_id:
+        raise HTTPException(status_code=400, detail="プラン変更予約がありません")
+
+    sub.scheduled_plan_id = None
+    sub.scheduled_change_at = None
+    db.commit()
+
+    logger.info(f"プラン変更予約キャンセル: user_id={user.id}, subscription_id={sub.id}")
+
+    return {"message": "プラン変更予約をキャンセルしました"}

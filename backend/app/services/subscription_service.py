@@ -554,7 +554,7 @@ def handle_payment_failed(db: Session, stripe_subscription_id: str):
 
 
 def handle_invoice_paid(db: Session, stripe_subscription_id: str):
-    """決済成功 → active に復帰 (past_due からの復帰)"""
+    """決済成功 → active に復帰 (past_due からの復帰) + トライアル終了時のプラン変更予約実行"""
     if not stripe_subscription_id:
         return
 
@@ -570,3 +570,54 @@ def handle_invoice_paid(db: Session, stripe_subscription_id: str):
         sub.status = "active"
         db.commit()
         logger.info(f"購読復帰: subscription_id={sub.id}, {old_status} -> active")
+
+        # トライアル終了時のプラン変更予約があれば実行
+        if old_status == "trialing" and sub.scheduled_plan_id:
+            _execute_scheduled_plan_change(db, sub)
+
+
+def _execute_scheduled_plan_change(db: Session, sub: Subscription):
+    """予約されたプラン変更を実行（Stripeでプラン変更 + DB更新）"""
+    new_plan = db.query(Plan).filter(Plan.id == sub.scheduled_plan_id).first()
+    if not new_plan or not new_plan.stripe_price_id:
+        logger.warning(f"予約プラン変更失敗: プランが見つからない subscription_id={sub.id}, new_plan_id={sub.scheduled_plan_id}")
+        sub.scheduled_plan_id = None
+        sub.scheduled_change_at = None
+        db.commit()
+        return
+
+    old_plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+    old_plan_name = old_plan.name if old_plan else "不明"
+
+    try:
+        # Stripeでプラン変更を実行
+        stripe_service.update_subscription_plan(
+            subscription_id=sub.stripe_subscription_id,
+            new_price_id=new_plan.stripe_price_id,
+            proration_behavior="none",  # トライアル終了時なので日割りなし
+        )
+
+        # DB更新
+        sub.plan_id = new_plan.id
+        sub.scheduled_plan_id = None
+        sub.scheduled_change_at = None
+        db.commit()
+
+        logger.info(f"トライアル終了時プラン変更実行: subscription_id={sub.id}, {old_plan_name} → {new_plan.name}")
+
+        # ユーザーにメール通知
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        if user:
+            send_plan_change_email(
+                to_email=user.email,
+                name=f"{user.name_last} {user.name_first}",
+                old_plan=old_plan_name,
+                new_plan=new_plan.name,
+            )
+
+    except Exception as e:
+        logger.error(f"トライアル終了時プラン変更失敗: subscription_id={sub.id}, error={e}")
+        # 失敗しても予約はクリア（無限リトライ防止）
+        sub.scheduled_plan_id = None
+        sub.scheduled_change_at = None
+        db.commit()
