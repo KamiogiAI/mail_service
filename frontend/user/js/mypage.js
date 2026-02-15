@@ -206,14 +206,14 @@ async function showPlanChangeModal() {
     const existing = document.getElementById('plan-change-modal');
     if (existing) existing.remove();
 
-    // トライアル中のサブスクを確認
-    const trialSub = _subs.find(s => s.status === 'trialing');
+    // 有料トライアル中のサブスクを確認（無料プラン price=0 は除外）
+    const trialSub = _subs.find(s => s.status === 'trialing' && s.plan_price > 0);
     
     if (trialSub) {
-        // トライアル中: 予約UIを表示
+        // 有料トライアル中: 予約UIを表示
         await showTrialPlanChangeModal(trialSub);
     } else {
-        // 通常: Billing Portalへ遷移するモーダル
+        // 通常 or 無料プラン: Billing Portalへ遷移（即時変更）
         showNormalPlanChangeModal();
     }
 }
@@ -266,9 +266,9 @@ async function showTrialPlanChangeModal(trialSub) {
 
     const modal = document.createElement('div');
     modal.id = 'plan-change-modal';
-    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;overflow-y:auto;';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:flex-start;justify-content:center;z-index:1000;overflow-y:auto;padding:60px 0 100px;box-sizing:border-box;';
     modal.innerHTML = `
-        <div style="background:#fff;padding:24px;border-radius:12px;max-width:450px;width:90%;margin:20px;">
+        <div style="background:#fff;padding:24px;border-radius:12px;max-width:450px;width:90%;margin:0 20px;">
             <h3 style="margin:0 0 8px;font-size:18px;">プラン変更予約</h3>
             <p style="margin:0 0 16px;font-size:14px;color:#666;">
                 トライアル終了時（${trialEndDate}）に変更されます
