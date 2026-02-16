@@ -760,12 +760,8 @@ def change_plan(
             db, subscription, old_plan, new_plan, change_type, promo
         )
     
-    # 無料→有料（通常状態）はCheckout経由を促す
-    if change_type == "from_free":
-        raise ValueError("無料プランから有料プランへの変更は、プラン選択ページからお申し込みください")
-    
-    # アップグレード: 即時（日割り）
-    if change_type == "upgrade":
+    # 無料→有料 / アップグレード: 即時（日割り）
+    if change_type in ("from_free", "upgrade"):
         return _apply_plan_change_immediately_custom(
             db, subscription, old_plan, new_plan, change_type, promo, stripe_promo_id
         )
