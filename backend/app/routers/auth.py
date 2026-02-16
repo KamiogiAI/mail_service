@@ -98,7 +98,7 @@ async def verify_email(
     )
 
     # セッション作成
-    session_id = await create_session(r, user.id, user.role, user.member_no, user.email)
+    session_id, session_ttl = await create_session(r, user.id, user.role, user.member_no, user.email)
     csrf_token = await generate_csrf_token(session_id)
 
     response.set_cookie(
@@ -107,7 +107,7 @@ async def verify_email(
         httponly=True,
         secure=not settings.DEBUG,  # 本番(DEBUG=False)ではTrue
         samesite="lax",
-        max_age=settings.SESSION_TIMEOUT_MINUTES * 60,
+        max_age=session_ttl,
     )
     response.headers["X-CSRF-Token"] = csrf_token
 
@@ -176,7 +176,9 @@ async def login(
         )
 
     # セッション作成 (固定化攻撃対策: 毎回新規)
-    session_id = await create_session(r, user.id, user.role, user.member_no, user.email)
+    session_id, session_ttl = await create_session(
+        r, user.id, user.role, user.member_no, user.email, remember_me=req.remember_me
+    )
     csrf_token = await generate_csrf_token(session_id)
 
     response.set_cookie(
@@ -185,7 +187,7 @@ async def login(
         httponly=True,
         secure=not settings.DEBUG,  # 本番(DEBUG=False)ではTrue
         samesite="lax",
-        max_age=settings.SESSION_TIMEOUT_MINUTES * 60,
+        max_age=session_ttl,
     )
     response.headers["X-CSRF-Token"] = csrf_token
 

@@ -17,6 +17,10 @@
             <h2>ログイン</h2>
             <div class="form-group"><label>メールアドレス</label><input id="email" type="email"></div>
             <div class="form-group"><label>パスワード</label><input id="password" type="password" onkeydown="if(event.key==='Enter')login()"></div>
+            <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+                <input id="remember_me" type="checkbox" style="width:auto;margin:0;">
+                <label for="remember_me" style="margin:0;cursor:pointer;">ログイン状態を保持する</label>
+            </div>
             <button class="btn btn-block" onclick="login()">ログイン</button>
             <div id="error" class="error-message"></div>
             <div class="nav-links" style="margin-top:20px;text-align:center;">
@@ -45,6 +49,7 @@
                     body: JSON.stringify({
                         email: document.getElementById('email').value,
                         password: document.getElementById('password').value,
+                        remember_me: document.getElementById('remember_me').checked,
                     }),
                 });
                 const data = await res.json();

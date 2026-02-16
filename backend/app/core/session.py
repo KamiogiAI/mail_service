@@ -7,6 +7,7 @@ from app.core.config import settings
 
 SESSION_PREFIX = "session:"
 SESSION_TTL = settings.SESSION_TIMEOUT_MINUTES * 60  # 秒
+REMEMBER_ME_TTL = 30 * 24 * 60 * 60  # 30日（秒）
 
 
 async def create_session(
@@ -15,10 +16,12 @@ async def create_session(
     role: str,
     member_no: str,
     email: str,
-) -> str:
-    """新しいセッションを作成し、session_idを返す"""
+    remember_me: bool = False,
+) -> tuple[str, int]:
+    """新しいセッションを作成し、(session_id, ttl)を返す"""
     session_id = secrets.token_hex(32)
     key = f"{SESSION_PREFIX}{session_id}"
+    ttl = REMEMBER_ME_TTL if remember_me else SESSION_TTL
     data = {
         "user_id": str(user_id),
         "role": role,
@@ -26,10 +29,11 @@ async def create_session(
         "email": email,
         "created_at": str(int(time.time())),
         "last_accessed": str(int(time.time())),
+        "remember_me": "1" if remember_me else "0",
     }
     await r.hset(key, mapping=data)
-    await r.expire(key, SESSION_TTL)
-    return session_id
+    await r.expire(key, ttl)
+    return session_id, ttl
 
 
 async def get_session(r: aioredis.Redis, session_id: str) -> Optional[dict]:
@@ -40,8 +44,12 @@ async def get_session(r: aioredis.Redis, session_id: str) -> Optional[dict]:
     data = await r.hgetall(key)
     if not data:
         return None
-    # TTL更新 (アイドルタイムアウトリセット)
-    await r.expire(key, SESSION_TTL)
+    # remember_meフラグに応じたTTL更新
+    remember_me = data.get("remember_me", b"0")
+    if isinstance(remember_me, bytes):
+        remember_me = remember_me.decode()
+    ttl = REMEMBER_ME_TTL if remember_me == "1" else SESSION_TTL
+    await r.expire(key, ttl)
     await r.hset(key, "last_accessed", str(int(time.time())))
     return data
 
