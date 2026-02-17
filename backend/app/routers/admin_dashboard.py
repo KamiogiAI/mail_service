@@ -1,5 +1,5 @@
 """管理画面: ダッシュボード統計"""
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from app.models.subscription import Subscription
 from app.models.delivery import Delivery
 from app.models.delivery_item import DeliveryItem
 from app.models.system_log import SystemLog
+from app.models.invoice_record import InvoiceRecord
 from app.routers.deps import require_admin
 
 router = APIRouter(prefix="/api/admin/dashboard", tags=["admin-dashboard"])
@@ -52,7 +53,15 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
     total_active_subs = sum(sub_counts.values())
     trialing_subs = sub_counts.get("trialing", 0)
 
-    # --- 月額売上 (admin_added は支払いなしなので除外、無効化ユーザーも除外) ---
+    # --- 月額売上（実際の請求額ベース）---
+    # 過去30日のInvoiceから実際の売り上げを計算
+    thirty_days_ago = now - timedelta(days=30)
+    invoice_revenue = db.query(sa_func.sum(InvoiceRecord.amount_paid)).filter(
+        InvoiceRecord.created_at >= thirty_days_ago,
+        InvoiceRecord.status == "paid",
+    ).scalar() or 0
+    
+    # InvoiceRecordがない場合のフォールバック（プラン定価ベース）
     PAID_STATUSES = ("trialing", "active", "past_due")
     revenue_rows = (
         db.query(Plan.price, sa_func.count(Subscription.id))
@@ -65,7 +74,10 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
         .group_by(Plan.id)
         .all()
     )
-    monthly_revenue = sum(price * cnt for price, cnt in revenue_rows)
+    estimated_revenue = sum(price * cnt for price, cnt in revenue_rows)
+    
+    # 実際の請求額がある場合はそれを優先、なければ見積もりを使用
+    monthly_revenue = invoice_revenue if invoice_revenue > 0 else estimated_revenue
 
     # --- プラン別加入者数 ---
     plan_breakdown = (

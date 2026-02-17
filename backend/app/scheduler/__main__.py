@@ -182,6 +182,15 @@ def main():
         max_instances=1,
     )
 
+    # 毎日2:00 JST: Stripe Invoice同期（取りこぼし対策）
+    from app.scheduler.invoice_sync import sync_invoices_from_stripe
+    scheduler.add_job(
+        sync_invoices_from_stripe,
+        CronTrigger(hour=2, minute=0, timezone="Asia/Tokyo"),
+        id="invoice_sync",
+        max_instances=1,
+    )
+
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
