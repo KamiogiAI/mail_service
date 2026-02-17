@@ -24,7 +24,7 @@ const DashboardPage = {
         const items = [
             { label: '会員数', value: d.users.active, sub: `全${d.users.total}人` },
             { label: '加入者数', value: d.subscriptions.total_active, sub: `トライアル ${d.subscriptions.trialing}人` },
-            { label: '月額売上', value: `&yen;${d.revenue.monthly.toLocaleString()}`, sub: '' },
+            { label: '過去30日売上', value: `&yen;${d.revenue.monthly.toLocaleString()}`, sub: '' },
             { label: '本日の配信', value: d.today.delivery_count, sub: `${d.today.sent}通送信` },
             { label: '本日 成功', value: d.today.success, sub: '', cls: 'dash-stat-success' },
             { label: '本日 失敗', value: d.today.fail, sub: '', cls: d.today.fail > 0 ? 'dash-stat-danger' : '' },

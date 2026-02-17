@@ -53,15 +53,20 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
     total_active_subs = sum(sub_counts.values())
     trialing_subs = sub_counts.get("trialing", 0)
 
-    # --- 月額売上（実際の請求額ベース）---
-    # 過去30日のInvoiceから実際の売り上げを計算
+    # --- 過去30日売上（実際の請求額ベース）---
     thirty_days_ago = now - timedelta(days=30)
     invoice_revenue = db.query(sa_func.sum(InvoiceRecord.amount_paid)).filter(
         InvoiceRecord.created_at >= thirty_days_ago,
         InvoiceRecord.status == "paid",
     ).scalar() or 0
     
-    # InvoiceRecordがない場合のフォールバック（プラン定価ベース）
+    # Invoice記録数を取得
+    invoice_count = db.query(sa_func.count(InvoiceRecord.id)).filter(
+        InvoiceRecord.created_at >= thirty_days_ago,
+        InvoiceRecord.status == "paid",
+    ).scalar() or 0
+    
+    # フォールバック用: プラン定価ベースの見積もり
     PAID_STATUSES = ("trialing", "active", "past_due")
     revenue_rows = (
         db.query(Plan.price, sa_func.count(Subscription.id))
@@ -76,8 +81,14 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
     )
     estimated_revenue = sum(price * cnt for price, cnt in revenue_rows)
     
-    # 実際の請求額がある場合はそれを優先、なければ見積もりを使用
-    monthly_revenue = invoice_revenue if invoice_revenue > 0 else estimated_revenue
+    # 有料購読数（トライアル除く）
+    paying_sub_count = total_active_subs - trialing_subs
+    
+    # Invoice記録が十分にある場合（80%以上カバー）のみInvoiceベースを使用
+    if paying_sub_count > 0 and invoice_count >= paying_sub_count * 0.8:
+        monthly_revenue = invoice_revenue
+    else:
+        monthly_revenue = estimated_revenue
 
     # --- プラン別加入者数 ---
     plan_breakdown = (
