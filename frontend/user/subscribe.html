@@ -63,7 +63,7 @@
 
                 el.innerHTML = `
                     <div class="card">
-                        <h2>${esc(plan.name)}</h2>
+                        <h2>${escWithBr(plan.name)}</h2>
                         <p style="color:#666;">${esc(plan.description || '')}</p>
                         <div class="price">¥${plan.price.toLocaleString()}<span style="font-size:14px;font-weight:normal;color:#888;">/月</span></div>
                     </div>
@@ -417,6 +417,10 @@
             const d = document.createElement('div');
             d.textContent = s || '';
             return d.innerHTML;
+        }
+        function escWithBr(s) {
+            // エスケープ後に \n を <br> に変換
+            return esc(s).replace(/\\n/g, '<br>');
         }
 
         // ログインチェック: 未ログインなら会員登録ページへリダイレクト

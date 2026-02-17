@@ -76,6 +76,10 @@ function esc(s) {
     d.textContent = s || '';
     return d.innerHTML;
 }
+function escWithBr(s) {
+    // エスケープ後に \n を <br> に変換
+    return esc(s).replace(/\\n/g, '<br>');
+}
 
 function fmtDate(iso) {
     if (!iso) return '-';
@@ -168,7 +172,7 @@ function renderPlanCard(s) {
     <div class="dash-card">
         <div class="dash-card-title">加入中プラン</div>
         <div class="plan-header">
-            <span class="plan-name">${esc(s.plan_name || 'プラン')}</span>
+            <span class="plan-name">${escWithBr(s.plan_name || 'プラン')}</span>
             ${statusBadge(s.status, s.cancel_at_period_end)}
         </div>
         <div class="plan-meta">
