@@ -55,16 +55,15 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
 
     # --- 過去30日売上（実際の請求額ベース）---
     thirty_days_ago = now - timedelta(days=30)
-    invoice_revenue = db.query(sa_func.sum(InvoiceRecord.amount_paid)).filter(
+    invoice_stats = db.query(
+        sa_func.coalesce(sa_func.sum(InvoiceRecord.amount_paid), 0),
+        sa_func.count(InvoiceRecord.id),
+    ).filter(
         InvoiceRecord.created_at >= thirty_days_ago,
         InvoiceRecord.status == "paid",
-    ).scalar() or 0
-    
-    # Invoice記録数を取得
-    invoice_count = db.query(sa_func.count(InvoiceRecord.id)).filter(
-        InvoiceRecord.created_at >= thirty_days_ago,
-        InvoiceRecord.status == "paid",
-    ).scalar() or 0
+    ).first()
+    invoice_revenue = invoice_stats[0] if invoice_stats else 0
+    invoice_count = invoice_stats[1] if invoice_stats else 0
     
     # フォールバック用: プラン定価ベースの見積もり
     PAID_STATUSES = ("trialing", "active", "past_due")

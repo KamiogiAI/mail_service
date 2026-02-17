@@ -1,5 +1,5 @@
 """Stripe Invoice 記録モデル"""
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func, BigInteger
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
 from app.core.database import Base
 
 
