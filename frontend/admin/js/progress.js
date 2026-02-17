@@ -139,7 +139,7 @@ const ProgressPage = {
                         <thead><tr><th>プラン名</th><th>エラー内容</th><th>発生日時</th></tr></thead>
                         <tbody>${d.recent_errors.map(e => `
                             <tr>
-                                <td>${this.esc(e.plan_name)}</td>
+                                <td>${this.escName(e.plan_name)}</td>
                                 <td style="max-width:400px;word-break:break-word;">${this.esc(e.error_message || '(詳細なし)')}</td>
                                 <td>${e.created_at ? new Date(e.created_at).toLocaleString('ja-JP') : '-'}</td>
                             </tr>
@@ -220,7 +220,7 @@ const ProgressPage = {
 
                         return `
                             <tr>
-                                <td>${this.esc(p.plan_name)}</td>
+                                <td>${this.escName(p.plan_name)}</td>
                                 <td style="font-size:12px;">${this.esc(p.schedule_type || '-')}</td>
                                 <td><span class="badge ${this.STATUS_CLASS[p.status] || ''} ${p.status === 1 ? 'badge-pulse' : ''}">${this.STATUS_LABEL[p.status] || '不明'}</span></td>
                                 <td style="min-width:180px;">${progressHtml}</td>
@@ -264,7 +264,7 @@ const ProgressPage = {
                         return `
                             <tr>
                                 <td>${d.started_at ? new Date(d.started_at).toLocaleString('ja-JP') : '-'}</td>
-                                <td>${this.esc(d.plan_name)}</td>
+                                <td>${this.escName(d.plan_name)}</td>
                                 <td><span style="font-size:12px;">${d.send_type}</span></td>
                                 <td><span class="badge ${sClass}">${sLabel}</span></td>
                                 <td>${d.success_count}</td>
@@ -466,7 +466,7 @@ const ProgressPage = {
     renderDetailModal(data) {
         const body = document.getElementById('progress-detail-body');
         document.getElementById('progress-detail-title').textContent =
-            `${data.plan_name} - 配信詳細`;
+            `${(data.plan_name || '').replace(/\\n/g, '')} - 配信詳細`;
 
         let html = '';
 
@@ -665,7 +665,7 @@ const ProgressPage = {
 
                             return `
                                 <tr>
-                                    <td>${this.esc(p.plan_name)}</td>
+                                    <td>${this.escName(p.plan_name)}</td>
                                     <td>${this.esc(p.schedule_type)}</td>
                                     <td>${this.esc(p.send_time)}</td>
                                     <td>
@@ -692,5 +692,8 @@ const ProgressPage = {
         const d = document.createElement('div');
         d.textContent = s || '';
         return d.innerHTML;
+    },
+    escName(s) {
+        return this.esc((s || '').replace(/\\n/g, ''));
     },
 };

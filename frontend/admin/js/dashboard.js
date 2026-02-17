@@ -106,7 +106,7 @@ const DashboardPage = {
                             const statusCls = r.status === 'success' ? 'badge-active' : (r.status === 'running' ? 'badge-warning' : 'badge-danger');
                             return `<tr>
                                 <td style="white-space:nowrap;">${this.fmtDatetime(r.created_at)}</td>
-                                <td>${this.esc(r.plan_name)}</td>
+                                <td>${this.escName(r.plan_name)}</td>
                                 <td>${TYPE_LABELS[r.send_type] || r.send_type}</td>
                                 <td><span class="badge ${statusCls}">${STATUS_LABELS[r.status]||r.status}</span> ${r.success}/${r.total}</td>
                             </tr>`;
