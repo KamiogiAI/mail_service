@@ -39,10 +39,10 @@
                 }
                 el.innerHTML = plans.map(p => `
                     <div class="card">
-                        <h3>${esc(p.name)}</h3>
+                        <h3>${escWithBr(p.name)}</h3>
                         <p style="color:#666;margin-bottom:12px;">${esc(p.description || '')}</p>
                         <div class="price">¥${p.price.toLocaleString()}<span style="font-size:14px;font-weight:normal;color:#888;">/月</span></div>
-                        <a href="../user/subscribe.html?plan_id=${p.id}" class="btn btn-block" style="margin-top:16px;">詳細を見る</a>
+                        <a href="../user/subscribe.html?plan_id=${p.id}" class="btn btn-block" style="margin-top:16px;">申し込む</a>
                     </div>
                 `).join('');
             } catch (e) {
@@ -53,6 +53,11 @@
         function esc(s) {
             const d = document.createElement('div');
             d.textContent = s || '';
+            return d.innerHTML;
+        }
+        function escWithBr(s) {
+            // エスケープ後に \n を <br> に変換
+            return esc(s).replace(/\\n/g, '<br>');
             return d.innerHTML;
         }
 

@@ -68,7 +68,7 @@ const UsersPage = {
                     <thead><tr><th>会員番号</th><th>名前</th><th>メール</th><th>加入プラン</th><th>ロール</th><th>状態</th><th>操作</th></tr></thead>
                     <tbody>${data.users.map(u => {
                         const planBadges = u.plans.length > 0
-                            ? u.plans.map(p => `<span class="badge badge-active" style="margin:2px;">${this.esc(p.plan_name)}</span>`).join('')
+                            ? u.plans.map(p => `<span class="badge badge-active" style="margin:2px;">${this.escName(p.plan_name)}</span>`).join('')
                             : '<span style="color:#999;">なし</span>';
                         return `
                         <tr>
@@ -112,7 +112,7 @@ const UsersPage = {
                 return `
                     <label class="plan-check-row">
                         <input type="checkbox" value="${p.id}" class="pcm-cb" ${checked}>
-                        <span>${this.esc(p.name)}</span>
+                        <span>${this.escName(p.name)}</span>
                         <span style="color:#666;font-size:12px;">¥${p.price.toLocaleString()}/月</span>
                         ${!p.is_active ? '<span class="badge badge-inactive" style="margin-left:5px;">無効</span>' : ''}
                     </label>
@@ -171,4 +171,6 @@ const UsersPage = {
     },
 
     esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; },
+    // プラン名表示用: \n を除去
+    escName(s) { return this.esc((s || '').replace(/\\n/g, '')); },
 };

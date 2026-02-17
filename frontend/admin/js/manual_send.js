@@ -50,7 +50,7 @@ const ManualSendPage = {
             const sel = document.getElementById('ms-plan-id');
             if (!sel) return;
             sel.innerHTML = '<option value="">プランを選択</option>' +
-                this.plans.map(p => `<option value="${p.id}">${this.esc(p.name)} (加入者: ${p.subscriber_count})</option>`).join('');
+                this.plans.map(p => `<option value="${p.id}">${this.escName(p.name)} (加入者: ${p.subscriber_count})</option>`).join('');
         } catch (e) {
             const sel = document.getElementById('ms-plan-id');
             if (sel) sel.innerHTML = '<option value="">読み込み失敗</option>';
@@ -160,6 +160,10 @@ const ManualSendPage = {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    },
+    // プラン名表示用: \n を除去
+    escName(s) {
+        return this.esc((s || '').replace(/\\n/g, ''));
     },
 
     async handleKeyDown(event) {

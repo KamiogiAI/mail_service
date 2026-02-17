@@ -48,7 +48,7 @@ const DashboardPage = {
         const maxCount = Math.max(...d.plans_summary.map(p => p.count), 1);
         const rows = d.plans_summary.map(p => `
             <div class="dash-plan-row">
-                <div class="dash-plan-name">${this.esc(p.name)}<span class="dash-plan-price">&yen;${p.price.toLocaleString()}/月</span></div>
+                <div class="dash-plan-name">${this.escName(p.name)}<span class="dash-plan-price">&yen;${p.price.toLocaleString()}/月</span></div>
                 <div class="dash-plan-bar-wrap">
                     <div class="dash-plan-bar" style="width:${Math.round(p.count / maxCount * 100)}%"></div>
                 </div>
@@ -153,5 +153,9 @@ const DashboardPage = {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    },
+    // プラン名表示用: \n を除去
+    escName(s) {
+        return this.esc((s || '').replace(/\\n/g, ''));
     },
 };

@@ -56,7 +56,7 @@ const SubscriptionsPage = {
         const el = document.getElementById('subs-content');
         const tabsHtml = this.plans.map((p, i) => `
             <button class="tab-btn ${i === this.activeTab ? 'active' : ''}"
-                onclick="SubscriptionsPage.switchTab(${i})">${this.esc(p.plan_name)} (${p.subscriber_count})</button>
+                onclick="SubscriptionsPage.switchTab(${i})">${this.escName(p.plan_name)} (${p.subscriber_count})</button>
         `).join('');
 
         el.innerHTML = `
@@ -218,7 +218,7 @@ const SubscriptionsPage = {
 
         // タイトル更新
         document.getElementById('sub-detail-title').textContent =
-            plan ? `${plan.name} - 購読詳細` : '購読詳細';
+            plan ? `${(plan.name || '').replace(/\\n/g, '')} - 購読詳細` : '購読詳細';
 
         // ステータスバッジ
         const statusMap = {
@@ -537,5 +537,9 @@ const SubscriptionsPage = {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    },
+    // プラン名表示用: \n を除去
+    escName(s) {
+        return this.esc((s || '').replace(/\\n/g, ''));
     },
 };
