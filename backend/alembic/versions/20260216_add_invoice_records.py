@@ -9,7 +9,7 @@ import sqlalchemy as sa
 
 
 revision = '20260216_invoice'
-down_revision = None
+down_revision = 'j8k9l0m1n234'  # add_pending_delete_to_plans
 branch_labels = None
 depends_on = None
 

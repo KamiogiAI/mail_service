@@ -372,77 +372,78 @@ def _handle_invoice_paid(db: Session, data: dict):
     if stripe_subscription_id:
         subscription_service.handle_invoice_paid(db, stripe_subscription_id)
 
-    # Invoice記録を保存
+    # 基本情報取得
     stripe_invoice_id = data.get("id")
     amount_paid = data.get("amount_paid", 0)
     customer_id = data.get("customer")
     billing_reason = data.get("billing_reason", "")
     
-    # 重複チェック
-    existing = db.query(InvoiceRecord).filter(
-        InvoiceRecord.stripe_invoice_id == stripe_invoice_id
-    ).first()
-    if not existing and stripe_invoice_id:
-        # ユーザーと購読を取得
-        user = db.query(User).filter(User.stripe_customer_id == customer_id).first() if customer_id else None
-        sub = db.query(Subscription).filter(
-            Subscription.stripe_subscription_id == stripe_subscription_id
-        ).first() if stripe_subscription_id else None
-        
-        # 割引情報を取得
-        discount = data.get("discount") or {}
-        coupon = discount.get("coupon") or {}
-        coupon_id = coupon.get("id")
-        subtotal = data.get("subtotal", 0)
-        discount_amount = data.get("total_discount_amounts", [{}])
-        discount_amount = discount_amount[0].get("amount", 0) if discount_amount else 0
-        
-        # プロモコードをDBから検索
-        promo = None
-        if coupon_id:
-            promo = db.query(PromotionCode).filter(
-                PromotionCode.stripe_coupon_id == coupon_id
-            ).first()
-        
-        # 期間
-        lines = data.get("lines", {}).get("data", [])
-        period_start = None
-        period_end = None
-        if lines:
-            period = lines[0].get("period", {})
-            if period.get("start"):
-                period_start = datetime.fromtimestamp(period["start"])
-            if period.get("end"):
-                period_end = datetime.fromtimestamp(period["end"])
-        
-        record = InvoiceRecord(
-            stripe_invoice_id=stripe_invoice_id,
-            stripe_subscription_id=stripe_subscription_id,
-            subscription_id=sub.id if sub else None,
-            user_id=user.id if user else None,
-            amount_paid=amount_paid,
-            subtotal=subtotal,
-            discount_amount=discount_amount,
-            promotion_code_id=promo.id if promo else None,
-            coupon_id=coupon_id,
-            period_start=period_start,
-            period_end=period_end,
-            status="paid",
-        )
-        db.add(record)
-        # commit は後でまとめて行う
-        logger.info(f"Invoice記録保存: invoice={stripe_invoice_id}, amount={amount_paid}")
+    # ユーザーと購読を取得（1回だけ）
+    user = db.query(User).filter(User.stripe_customer_id == customer_id).first() if customer_id else None
+    sub = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == stripe_subscription_id
+    ).first() if stripe_subscription_id else None
 
-    # 有料課金が発生した場合、ユーザーのtrial_usedをTrueに設定
-    # (トライアルなしプランからトライアルありプランへの乗り換え防止)
+    # --- Invoice記録を保存（try-exceptで囲む）---
+    try:
+        existing = db.query(InvoiceRecord).filter(
+            InvoiceRecord.stripe_invoice_id == stripe_invoice_id
+        ).first()
+        if not existing and stripe_invoice_id:
+            # 割引情報を取得
+            discount = data.get("discount") or {}
+            coupon = discount.get("coupon") or {}
+            coupon_id = coupon.get("id")
+            subtotal = data.get("subtotal", 0)
+            discount_amounts = data.get("total_discount_amounts") or []
+            discount_amount = discount_amounts[0].get("amount", 0) if discount_amounts else 0
+            
+            # プロモコードをDBから検索
+            promo = None
+            if coupon_id:
+                promo = db.query(PromotionCode).filter(
+                    PromotionCode.stripe_coupon_id == coupon_id
+                ).first()
+            
+            # 期間
+            lines = data.get("lines", {}).get("data", [])
+            period_start = None
+            period_end = None
+            if lines:
+                period = lines[0].get("period", {})
+                if period.get("start"):
+                    period_start = datetime.fromtimestamp(period["start"])
+                if period.get("end"):
+                    period_end = datetime.fromtimestamp(period["end"])
+            
+            record = InvoiceRecord(
+                stripe_invoice_id=stripe_invoice_id,
+                stripe_subscription_id=stripe_subscription_id,
+                subscription_id=sub.id if sub else None,
+                user_id=user.id if user else None,
+                amount_paid=amount_paid,
+                subtotal=subtotal,
+                discount_amount=discount_amount,
+                promotion_code_id=promo.id if promo else None,
+                coupon_id=coupon_id,
+                period_start=period_start,
+                period_end=period_end,
+                status="paid",
+            )
+            db.add(record)
+            db.commit()  # Invoice記録を確実にcommit
+            logger.info(f"Invoice記録保存: invoice={stripe_invoice_id}, amount={amount_paid}")
+    except Exception as e:
+        logger.warning(f"Invoice記録保存エラー（処理は継続）: invoice={stripe_invoice_id}, error={e}")
+        db.rollback()
+
+    # --- 有料課金が発生した場合、ユーザーのtrial_usedをTrueに設定 ---
     subscription_id = stripe_subscription_id
     
-    if amount_paid > 0 and customer_id:
-        user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
-        if user and not user.trial_used:
-            user.trial_used = True
-            db.commit()
-            logger.info(f"初回課金完了: user_id={user.id}, trial_used=True に設定")
+    if amount_paid > 0 and user and not user.trial_used:
+        user.trial_used = True
+        db.commit()
+        logger.info(f"初回課金完了: user_id={user.id}, trial_used=True に設定")
         
         # 更新完了メール送信（初回以外の請求時）
         # billing_reason: subscription_cycle（定期更新）, subscription_update（変更時の日割り）
