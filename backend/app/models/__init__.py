@@ -44,3 +44,4 @@ __all__ = [
     "ProcessedStripeEvent",
     "SubscriptionPlanChange",
 ]
+from app.models.invoice_record import InvoiceRecord
