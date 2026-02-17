@@ -80,6 +80,10 @@ function escWithBr(s) {
     // エスケープ後に \n を <br> に変換
     return esc(s).replace(/\\n/g, '<br>');
 }
+function escName(s) {
+    // プラン名表示用: \n を除去
+    return esc((s || '').replace(/\\n/g, ''));
+}
 
 function fmtDate(iso) {
     if (!iso) return '-';
@@ -152,7 +156,7 @@ function renderPlanCard(s) {
         <div class="meta-item" style="border-top:1px solid #eee;padding-top:8px;margin-top:4px;">
             <div class="meta-label">プラン変更予定</div>
             <div class="meta-value">
-                ${esc(s.scheduled_plan_name)} (${fmtDate(s.scheduled_change_at)}〜)
+                ${escName(s.scheduled_plan_name)} (${fmtDate(s.scheduled_change_at)}〜)
                 <button class="d-btn d-btn-ghost d-btn-xs" style="margin-left:8px;font-size:11px;" onclick="cancelScheduledPlanChange(${s.id})">取消</button>
             </div>
         </div>`;
@@ -172,7 +176,7 @@ function renderPlanCard(s) {
     <div class="dash-card">
         <div class="dash-card-title">加入中プラン</div>
         <div class="plan-header">
-            <span class="plan-name">${escWithBr(s.plan_name || 'プラン')}</span>
+            <span class="plan-name">${escName(s.plan_name || 'プラン')}</span>
             ${statusBadge(s.status, s.cancel_at_period_end)}
         </div>
         <div class="plan-meta">
@@ -301,7 +305,7 @@ async function showPlanChangeModal() {
         <div style="background:#fff;padding:24px;border-radius:12px;max-width:450px;width:90%;margin:0 20px;">
             <h3 style="margin:0 0 8px;font-size:18px;">プラン変更</h3>
             <div style="margin-bottom:16px;">
-                <div style="font-size:13px;color:#888;margin-bottom:8px;">現在のプラン: <strong>${esc(activeSub.plan_name)}</strong> (${activeSub.plan_price === 0 ? '無料' : '¥' + activeSub.plan_price.toLocaleString() + '/月'})</div>
+                <div style="font-size:13px;color:#888;margin-bottom:8px;">現在のプラン: <strong>${escName(activeSub.plan_name)}</strong> (${activeSub.plan_price === 0 ? '無料' : '¥' + activeSub.plan_price.toLocaleString() + '/月'})</div>
                 <div style="font-size:14px;margin-bottom:8px;">変更先を選択:</div>
                 ${planOptions}
             </div>
@@ -505,7 +509,7 @@ async function loadAnswersCard() {
                 html += `
                 <div class="dash-card">
                     <div class="dash-card-title">回答情報</div>
-                    <div class="answers-plan-title">${esc(sub.plan_name || 'プラン')}</div>
+                    <div class="answers-plan-title">${escName(sub.plan_name || 'プラン')}</div>
                     <div id="answers-readonly-${sub.plan_id}">${answersReadonly}</div>
                     <div class="edit-form" id="edit-form-${sub.plan_id}">
                         ${editForm}

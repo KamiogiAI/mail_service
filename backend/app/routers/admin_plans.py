@@ -237,7 +237,7 @@ async def create_plan(data: PlanCreate, db: Session = Depends(get_db), _=Depends
     # Stripe Product/Price作成（無料プランも含む）
     try:
         product_id, price_id = stripe_service.create_product_and_price(
-            name=data.name,
+            name=data.name.replace("\\n", "") if data.name else "",
             description=data.description or "",
             price_yen=data.price,
         )
@@ -292,7 +292,7 @@ async def update_plan(plan_id: int, data: PlanUpdate, db: Session = Depends(get_
     # Stripe Product更新
     if plan.stripe_product_id:
         try:
-            stripe_service.update_product(plan.stripe_product_id, data.name, data.description or "")
+            stripe_service.update_product(plan.stripe_product_id, data.name.replace("\\n", "") if data.name else "", data.description or "")
         except Exception as e:
             logger.warning(f"Stripe Product更新失敗 (product_id={plan.stripe_product_id}): {e}")
     
