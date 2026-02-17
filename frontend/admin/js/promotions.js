@@ -145,7 +145,7 @@ const PromotionsPage = {
             }
             container.innerHTML = _promoPlans.map(p => `
                 <label style="display:block;margin-bottom:4px;cursor:pointer;">
-                    <input type="checkbox" class="promo-plan-check" value="${p.id}" ${selectedIds.includes(p.id) ? 'checked' : ''}> ${p.name} (¥${p.price.toLocaleString()}/月)
+                    <input type="checkbox" class="promo-plan-check" value="${p.id}" ${selectedIds.includes(p.id) ? 'checked' : ''}> ${(p.name || '').replace(/\\n/g, '')} (¥${p.price.toLocaleString()}/月)
                 </label>
             `).join('');
         } catch {

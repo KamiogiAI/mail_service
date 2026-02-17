@@ -39,7 +39,7 @@ const PlansPage = {
                                 <button class="btn btn-sm" onclick="PlansPage.moveUp(${i})" ${i === 0 ? 'disabled' : ''}>↑</button>
                                 <button class="btn btn-sm" onclick="PlansPage.moveDown(${i})" ${i === this.plans.length - 1 ? 'disabled' : ''}>↓</button>
                             </td>
-                            <td>${this.esc(p.name)}</td>
+                            <td>${this.escName(p.name)}</td>
                             <td>¥${p.price.toLocaleString()}/月</td>
                             <td>${p.schedule_type}</td>
                             <td>${p.send_time || '-'}</td>
@@ -48,7 +48,7 @@ const PlansPage = {
                             <td><span class="badge ${p.is_active ? 'badge-active' : 'badge-inactive'}">${p.is_active ? '有効' : '無効'}</span></td>
                             <td class="action-btns">
                                 <button class="btn btn-sm btn-secondary" onclick="PlansPage.showEditModal(${p.id})">編集</button>
-                                <button class="btn btn-sm btn-danger" onclick="PlansPage.deletePlan(${p.id}, '${this.esc(p.name)}')">削除</button>
+                                <button class="btn btn-sm btn-danger" onclick="PlansPage.deletePlan(${p.id}, '${this.escName(p.name)}')">削除</button>
                             </td>
                         </tr>
                     `).join('')}
@@ -657,6 +657,10 @@ const PlansPage = {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    },
+    // プラン名表示用: \n を除去
+    escName(s) {
+        return this.esc((s || '').replace(/\\n/g, ''));
     },
 };
 
