@@ -291,7 +291,7 @@ async function showPlanChangeModal() {
         return `
             <label style="display:block;padding:12px;border:1px solid #ddd;border-radius:8px;margin-bottom:8px;cursor:${info.disabled ? 'not-allowed' : 'pointer'};text-align:left;${info.disabled ? 'opacity:0.6;' : ''}">
                 <input type="radio" name="new-plan" value="${p.id}" data-price="${p.price}" style="margin-right:8px;" ${info.disabled ? 'disabled' : ''}>
-                <strong>${esc(p.name)}</strong>
+                <strong>${escName(p.name)}</strong>
                 <span style="color:#666;margin-left:8px;">${p.price === 0 ? '無料' : '¥' + p.price.toLocaleString() + '/月'}</span>
                 <div style="font-size:12px;color:#888;margin-top:4px;margin-left:20px;">${info.label}</div>
             </label>
