@@ -52,6 +52,8 @@ class PlanCreate(BaseModel):
     prompt: str
     batch_send_enabled: bool = False
     trial_enabled: bool = True
+    bg_color: Optional[str] = "#ffffff"
+    text_color: Optional[str] = "#000000"
 
 
 class PlanUpdate(PlanCreate):
@@ -123,6 +125,8 @@ async def list_plans(db: Session = Depends(get_db), _=Depends(require_admin)):
             "trial_enabled": p.trial_enabled,
             "subscriber_count": sub_count,
             "sort_order": p.sort_order,
+            "bg_color": p.bg_color,
+            "text_color": p.text_color,
             "created_at": p.created_at.isoformat() if p.created_at else None,
         })
     return result
@@ -179,6 +183,8 @@ async def get_plan(plan_id: int, db: Session = Depends(get_db), _=Depends(requir
         "prompt": plan.prompt,
         "batch_send_enabled": plan.batch_send_enabled,
         "trial_enabled": plan.trial_enabled,
+        "bg_color": plan.bg_color,
+        "text_color": plan.text_color,
         "questions": [
             {
                 "id": q.id,
@@ -232,6 +238,8 @@ async def create_plan(data: PlanCreate, db: Session = Depends(get_db), _=Depends
         prompt=data.prompt,
         batch_send_enabled=data.batch_send_enabled,
         trial_enabled=data.trial_enabled,
+        bg_color=data.bg_color,
+        text_color=data.text_color,
     )
 
     # Stripe Product/Price作成（無料プランも含む）
@@ -286,6 +294,8 @@ async def update_plan(plan_id: int, data: PlanUpdate, db: Session = Depends(get_
     plan.prompt = data.prompt
     plan.batch_send_enabled = data.batch_send_enabled
     plan.trial_enabled = data.trial_enabled
+    plan.bg_color = data.bg_color
+    plan.text_color = data.text_color
     if data.is_active is not None:
         plan.is_active = data.is_active
 

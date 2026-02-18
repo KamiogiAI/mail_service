@@ -37,14 +37,17 @@
                     el.innerHTML = '<div class="empty-state"><p>現在利用可能なプランはありません</p></div>';
                     return;
                 }
-                el.innerHTML = plans.map(p => `
-                    <div class="card">
-                        <h3>${escWithBr(p.name)}</h3>
+                el.innerHTML = plans.map(p => {
+                    const bgColor = p.bg_color || '#ffffff';
+                    const textColor = p.text_color || '#000000';
+                    return `
+                    <div class="card" style="background-color:${bgColor};">
+                        <h3 style="color:${textColor};">${escWithBr(p.name)}</h3>
                         <p style="color:#666;margin-bottom:12px;">${esc(p.description || '')}</p>
                         <div class="price">¥${p.price.toLocaleString()}<span style="font-size:14px;font-weight:normal;color:#888;">/月</span></div>
                         <a href="../user/subscribe.html?plan_id=${p.id}" class="btn btn-block" style="margin-top:16px;">申し込む</a>
                     </div>
-                `).join('');
+                `}).join('');
             } catch (e) {
                 document.getElementById('plans').innerHTML = '<p class="error-message">読み込みに失敗しました</p>';
             }

@@ -775,3 +775,34 @@ table tr:hover { background: #f5f5f5; }
     font-size: 14px;
     color: #666;
 }
+
+/* 色選択 */
+.color-picker-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.color-option {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    transition: background 0.2s;
+}
+.color-option:hover {
+    background: #f0f0f0;
+}
+.color-option input[type="radio"] {
+    width: auto;
+    margin: 0;
+}
+.color-swatch {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+}
+
