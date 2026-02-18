@@ -45,7 +45,7 @@
                         <h3 style="color:${textColor};">${escWithBr(p.name)}</h3>
                         <p style="color:#666;margin-bottom:12px;">${esc(p.description || '')}</p>
                         <div class="price">¥${p.price.toLocaleString()}<span style="font-size:14px;font-weight:normal;color:#888;">/月</span></div>
-                        <a href="../user/subscribe.html?plan_id=${p.id}" class="btn btn-block" style="margin-top:16px;">申し込む</a>
+                        <a href="../user/subscribe.html?plan_id=${p.id}" class="btn btn-block" style="margin-top:16px;">このプランを申し込む</a>
                     </div>
                 `}).join('');
             } catch (e) {
