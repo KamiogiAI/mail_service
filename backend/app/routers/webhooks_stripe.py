@@ -175,6 +175,23 @@ def _handle_checkout_completed(db: Session, data: dict):
     except Exception as e:
         logger.warning(f"Stripe Subscription取得失敗: {e}")
 
+    # ディスカウントからプロモーションコードを取得
+    promotion_code_id = None
+    try:
+        stripe_sub_obj = stripe_service.retrieve_subscription(stripe_subscription_id)
+        if stripe_sub_obj and stripe_sub_obj.get("discount"):
+            discount = stripe_sub_obj["discount"]
+            coupon = discount.get("coupon", {})
+            stripe_coupon_id = coupon.get("id") if coupon else None
+            if stripe_coupon_id:
+                promo = db.query(PromotionCode).filter(
+                    PromotionCode.stripe_coupon_id == stripe_coupon_id
+                ).first()
+                if promo:
+                    promotion_code_id = promo.id
+    except Exception as e:
+        logger.warning(f"プロモーションコード取得失敗: {e}")
+
     subscription_service.create_subscription_record(
         db=db,
         user_id=user_id,
@@ -185,9 +202,10 @@ def _handle_checkout_completed(db: Session, data: dict):
         trial_end=trial_end,
         current_period_start=current_period_start,
         current_period_end=current_period_end,
+        promotion_code_id=promotion_code_id,
     )
 
-    logger.info(f"Checkout完了: user_id={user_id}, plan_id={plan_id}, status={status}")
+    logger.info(f"Checkout完了: user_id={user_id}, plan_id={plan_id}, status={status}, promo_id={promotion_code_id}")
 
     # プロモーションコード使用数を更新
     try:
@@ -273,6 +291,19 @@ def _handle_subscription_created(db: Session, data: dict):
     if data.get("current_period_end"):
         current_period_end = datetime.fromtimestamp(data["current_period_end"])
 
+    # ディスカウントからプロモーションコードを取得
+    promotion_code_id = None
+    discount = data.get("discount")
+    if discount:
+        coupon = discount.get("coupon", {})
+        stripe_coupon_id = coupon.get("id") if coupon else None
+        if stripe_coupon_id:
+            promo = db.query(PromotionCode).filter(
+                PromotionCode.stripe_coupon_id == stripe_coupon_id
+            ).first()
+            if promo:
+                promotion_code_id = promo.id
+
     subscription_service.create_subscription_record(
         db=db,
         user_id=user.id,
@@ -283,9 +314,10 @@ def _handle_subscription_created(db: Session, data: dict):
         trial_end=trial_end,
         current_period_start=current_period_start,
         current_period_end=current_period_end,
+        promotion_code_id=promotion_code_id,
     )
 
-    logger.info(f"subscription.created: レコード作成 user_id={user.id}, plan_id={plan.id}, status={status}")
+    logger.info(f"subscription.created: レコード作成 user_id={user.id}, plan_id={plan.id}, status={status}, promo_id={promotion_code_id}")
     
     # 加入完了メール送信
     is_trial = status == "trialing"

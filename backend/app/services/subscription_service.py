@@ -70,6 +70,7 @@ def create_subscription_record(
     trial_end: datetime = None,
     current_period_start: datetime = None,
     current_period_end: datetime = None,
+    promotion_code_id: int = None,
 ) -> Subscription:
     """購読レコード作成"""
     sub = Subscription(
@@ -81,6 +82,7 @@ def create_subscription_record(
         trial_end=trial_end,
         current_period_start=current_period_start,
         current_period_end=current_period_end,
+        promotion_code_id=promotion_code_id,
     )
     db.add(sub)
     db.commit()
