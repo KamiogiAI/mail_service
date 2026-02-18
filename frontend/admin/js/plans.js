@@ -149,6 +149,32 @@ const PlansPage = {
                     <div class="form-group"><label><input type="checkbox" id="p-trial" checked>初月無料トライアルを有効にする</label></div>
                     <div class="form-group"><label><input type="checkbox" id="p-batch">まとめて送信 (batch_send)</label></div>
                     <div class="form-group"><label><input type="checkbox" id="p-active" checked>有効</label></div>
+                    <div class="form-row" style="margin-top:16px;">
+                        <div class="form-group">
+                            <label>背景色</label>
+                            <div class="color-picker-group">
+                                <label class="color-option"><input type="radio" name="bg-color" value="#f0f9ff"><span class="color-swatch" style="background:#f0f9ff;"></span>青</label>
+                                <label class="color-option"><input type="radio" name="bg-color" value="#f0fdf4"><span class="color-swatch" style="background:#f0fdf4;"></span>緑</label>
+                                <label class="color-option"><input type="radio" name="bg-color" value="#fef3c7"><span class="color-swatch" style="background:#fef3c7;"></span>黄</label>
+                                <label class="color-option"><input type="radio" name="bg-color" value="#fce7f3"><span class="color-swatch" style="background:#fce7f3;"></span>ピンク</label>
+                                <label class="color-option"><input type="radio" name="bg-color" value="#ede9fe"><span class="color-swatch" style="background:#ede9fe;"></span>紫</label>
+                                <label class="color-option"><input type="radio" name="bg-color" value="#f1f5f9"><span class="color-swatch" style="background:#f1f5f9;"></span>グレー</label>
+                                <label class="color-option"><input type="radio" name="bg-color" value="#ffffff" checked><span class="color-swatch" style="background:#ffffff;border:1px solid #ddd;"></span>白</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>文字色（プラン名）</label>
+                            <div class="color-picker-group">
+                                <label class="color-option"><input type="radio" name="text-color" value="#1e40af"><span class="color-swatch" style="background:#1e40af;"></span>青</label>
+                                <label class="color-option"><input type="radio" name="text-color" value="#166534"><span class="color-swatch" style="background:#166534;"></span>緑</label>
+                                <label class="color-option"><input type="radio" name="text-color" value="#92400e"><span class="color-swatch" style="background:#92400e;"></span>茶</label>
+                                <label class="color-option"><input type="radio" name="text-color" value="#be185d"><span class="color-swatch" style="background:#be185d;"></span>ピンク</label>
+                                <label class="color-option"><input type="radio" name="text-color" value="#6b21a8"><span class="color-swatch" style="background:#6b21a8;"></span>紫</label>
+                                <label class="color-option"><input type="radio" name="text-color" value="#334155"><span class="color-swatch" style="background:#334155;"></span>グレー</label>
+                                <label class="color-option"><input type="radio" name="text-color" value="#000000" checked><span class="color-swatch" style="background:#000000;"></span>黒</label>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div id="tab-questions" class="tab-content">
                     <div id="questions-container"></div>
@@ -263,6 +289,16 @@ const PlansPage = {
             // 曜日チェックボックス復元
             document.querySelectorAll('.weekday-cb').forEach(cb => {
                 cb.checked = (plan.schedule_weekdays || []).includes(parseInt(cb.value));
+            });
+
+            // 色ラジオボタン復元
+            const bgColor = plan.bg_color || '#ffffff';
+            const textColor = plan.text_color || '#000000';
+            document.querySelectorAll('input[name="bg-color"]').forEach(r => {
+                r.checked = r.value === bgColor;
+            });
+            document.querySelectorAll('input[name="text-color"]').forEach(r => {
+                r.checked = r.value === textColor;
             });
 
             this.onScheduleTypeChange();
@@ -450,6 +486,8 @@ const PlansPage = {
         errEl.textContent = '';
 
         const scheduleType = document.getElementById('p-schedule-type').value;
+        const bgColor = document.querySelector('input[name="bg-color"]:checked')?.value || '#ffffff';
+        const textColor = document.querySelector('input[name="text-color"]:checked')?.value || '#000000';
         const data = {
             name: document.getElementById('p-name').value,
             description: document.getElementById('p-desc').value,
@@ -463,6 +501,8 @@ const PlansPage = {
             prompt: document.getElementById('p-prompt').value,
             batch_send_enabled: document.getElementById('p-batch').checked,
             trial_enabled: document.getElementById('p-trial').checked,
+            bg_color: bgColor,
+            text_color: textColor,
         };
 
         if (!data.name || !data.prompt || !data.send_time) {

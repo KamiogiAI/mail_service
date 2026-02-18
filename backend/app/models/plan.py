@@ -45,5 +45,9 @@ class Plan(Base):
     # 並び順
     sort_order = Column(Integer, nullable=False, default=0, comment="表示順（小さいほど上）")
 
+    # 表示色
+    bg_color = Column(String(7), nullable=True, default="#ffffff", comment="背景色 (HEX)")
+    text_color = Column(String(7), nullable=True, default="#000000", comment="文字色 (HEX)")
+
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

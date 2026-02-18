@@ -19,6 +19,8 @@ async def list_public_plans(db: Session = Depends(get_db)):
             "name": p.name,
             "description": p.description,
             "price": p.price,
+            "bg_color": p.bg_color or "#ffffff",
+            "text_color": p.text_color or "#000000",
         }
         for p in plans
     ]
