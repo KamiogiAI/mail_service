@@ -44,10 +44,12 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def generate_member_no(db: Session) -> str:
     """8桁会員番号を自動採番"""
-    result = db.query(sa_func.max(User.member_no)).scalar()
+    from sqlalchemy import cast, Integer
+    # member_noは文字列型なので、数値としてCASTしてからMAXを取る
+    result = db.query(sa_func.max(cast(User.member_no, Integer))).scalar()
     if result is None:
         return str(MEMBER_NO_START)
-    next_no = int(result) + 1
+    next_no = result + 1
     return str(next_no)
 
 
