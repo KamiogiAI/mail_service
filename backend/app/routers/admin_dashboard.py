@@ -13,6 +13,7 @@ from app.models.delivery import Delivery
 from app.models.delivery_item import DeliveryItem
 from app.models.system_log import SystemLog
 from app.models.invoice_record import InvoiceRecord
+from app.models.promotion_code import PromotionCode
 from app.routers.deps import require_admin
 
 router = APIRouter(prefix="/api/admin/dashboard", tags=["admin-dashboard"])
@@ -53,41 +54,50 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
     total_active_subs = sum(sub_counts.values())
     trialing_subs = sub_counts.get("trialing", 0)
 
-    # --- 過去30日売上（実際の請求額ベース）---
-    thirty_days_ago = now - timedelta(days=30)
-    invoice_stats = db.query(
-        sa_func.coalesce(sa_func.sum(InvoiceRecord.amount_paid), 0),
-        sa_func.count(InvoiceRecord.id),
-    ).filter(
-        InvoiceRecord.created_at >= thirty_days_ago,
-        InvoiceRecord.status == "paid",
-    ).first()
-    invoice_revenue = invoice_stats[0] if invoice_stats else 0
-    invoice_count = invoice_stats[1] if invoice_stats else 0
-    
-    # フォールバック用: プラン定価ベースの見積もり
-    PAID_STATUSES = ("trialing", "active", "past_due")
-    revenue_rows = (
-        db.query(Plan.price, sa_func.count(Subscription.id))
-        .join(Subscription, Subscription.plan_id == Plan.id)
+    # --- 売上計算（定価とプロモ適用後の両方）---
+    # アクティブな購読を取得（プラン価格とプロモーションコード情報付き）
+    PAID_STATUSES = ("trialing", "active", "past_due", "admin_added")
+    active_subs_with_promo = (
+        db.query(
+            Subscription,
+            Plan.price.label("plan_price"),
+            PromotionCode.discount_type,
+            PromotionCode.discount_value,
+        )
+        .join(Plan, Subscription.plan_id == Plan.id)
         .join(User, Subscription.user_id == User.id)
+        .outerjoin(PromotionCode, Subscription.promotion_code_id == PromotionCode.id)
         .filter(
             Subscription.status.in_(PAID_STATUSES),
             User.is_active == True,
         )
-        .group_by(Plan.id)
         .all()
     )
-    estimated_revenue = sum(price * cnt for price, cnt in revenue_rows)
     
-    # 有料購読数（トライアル除く）
-    paying_sub_count = total_active_subs - trialing_subs
+    # 定価合計とプロモ適用後合計を計算
+    list_price_total = 0  # 定価合計
+    discounted_total = 0  # プロモ適用後合計
     
-    # Invoice記録が十分にある場合（80%以上カバー）のみInvoiceベースを使用
-    if paying_sub_count > 0 and invoice_count >= paying_sub_count * 0.8:
-        monthly_revenue = invoice_revenue
-    else:
-        monthly_revenue = estimated_revenue
+    for sub, plan_price, discount_type, discount_value in active_subs_with_promo:
+        list_price_total += plan_price
+        
+        if discount_type and discount_value:
+            if discount_type == "percent_off":
+                # パーセント割引
+                discounted_price = plan_price * (100 - discount_value) / 100
+            elif discount_type == "amount_off":
+                # 固定額割引
+                discounted_price = max(0, plan_price - discount_value)
+            else:
+                discounted_price = plan_price
+        else:
+            discounted_price = plan_price
+        
+        discounted_total += discounted_price
+    
+    # 整数に丸める
+    list_price_total = int(list_price_total)
+    discounted_total = int(discounted_total)
 
     # --- プラン別加入者数 ---
     # LEFT JOINで0人のプランも含め、sort_order順に表示
@@ -182,7 +192,8 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
             "trialing": trialing_subs,
         },
         "revenue": {
-            "monthly": monthly_revenue,
+            "list_price": list_price_total,
+            "discounted": discounted_total,
         },
         "plans_summary": plans_summary,
         "today": {

@@ -21,10 +21,17 @@ const DashboardPage = {
     },
 
     renderStats(d) {
+        // 売上サブテキスト（定価とプロモ適用後の差がある場合）
+        const listPrice = d.revenue.list_price || 0;
+        const discounted = d.revenue.discounted || 0;
+        const revenueSub = listPrice !== discounted 
+            ? `定価 &yen;${listPrice.toLocaleString()}`
+            : '';
+        
         const items = [
             { label: '会員数', value: d.users.active, sub: `全${d.users.total}人` },
             { label: '加入者数', value: d.subscriptions.total_active, sub: `トライアル ${d.subscriptions.trialing}人` },
-            { label: '過去30日売上', value: `&yen;${d.revenue.monthly.toLocaleString()}`, sub: '' },
+            { label: '月額売上見込', value: `&yen;${discounted.toLocaleString()}`, sub: revenueSub },
             { label: '本日の配信', value: d.today.delivery_count, sub: `${d.today.sent}通送信` },
             { label: '本日 成功', value: d.today.success, sub: '', cls: 'dash-stat-success' },
             { label: '本日 失敗', value: d.today.fail, sub: '', cls: d.today.fail > 0 ? 'dash-stat-danger' : '' },

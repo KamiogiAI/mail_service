@@ -174,6 +174,7 @@ async def checkout_complete(
     current_period_start = None
     current_period_end = None
     status = "active"
+    promotion_code_id = None
     if hasattr(stripe_sub, "status"):
         status = stripe_sub.status
         if stripe_sub.trial_end:
@@ -182,6 +183,17 @@ async def checkout_complete(
             current_period_start = datetime.fromtimestamp(stripe_sub.current_period_start)
         if stripe_sub.current_period_end:
             current_period_end = datetime.fromtimestamp(stripe_sub.current_period_end)
+        # ディスカウントからプロモーションコードを取得
+        if hasattr(stripe_sub, "discount") and stripe_sub.discount:
+            discount = stripe_sub.discount
+            coupon = getattr(discount, "coupon", None)
+            if coupon:
+                stripe_coupon_id = coupon.id if hasattr(coupon, "id") else str(coupon)
+                promo = db.query(PromotionCode).filter(
+                    PromotionCode.stripe_coupon_id == stripe_coupon_id
+                ).first()
+                if promo:
+                    promotion_code_id = promo.id
 
     try:
         sub = subscription_service.create_subscription_record(
@@ -194,6 +206,7 @@ async def checkout_complete(
             trial_end=trial_end,
             current_period_start=current_period_start,
             current_period_end=current_period_end,
+            promotion_code_id=promotion_code_id,
         )
     except IntegrityError:
         # Webhook が同時に作成した場合 (stripe_subscription_id UNIQUE制約)
