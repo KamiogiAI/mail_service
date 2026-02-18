@@ -90,12 +90,20 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
         monthly_revenue = estimated_revenue
 
     # --- プラン別加入者数 ---
+    # LEFT JOINで0人のプランも含め、sort_order順に表示
     plan_breakdown = (
-        db.query(Plan.name, Plan.price, sa_func.count(Subscription.id))
-        .join(Subscription, Subscription.plan_id == Plan.id)
-        .filter(Subscription.status.in_(ACTIVE_STATUSES))
+        db.query(
+            Plan.name,
+            Plan.price,
+            sa_func.count(Subscription.id).label("cnt"),
+        )
+        .outerjoin(
+            Subscription,
+            (Subscription.plan_id == Plan.id) & (Subscription.status.in_(ACTIVE_STATUSES)),
+        )
+        .filter(Plan.is_active == True)
         .group_by(Plan.id)
-        .order_by(sa_func.count(Subscription.id).desc())
+        .order_by(Plan.sort_order, Plan.id)
         .all()
     )
     plans_summary = [
