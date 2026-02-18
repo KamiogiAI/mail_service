@@ -22,8 +22,9 @@ const DashboardPage = {
 
     renderStats(d) {
         // 売上サブテキスト（定価とプロモ適用後の差がある場合）
-        const listPrice = d.revenue.list_price || 0;
-        const discounted = d.revenue.discounted || 0;
+        const revenue = d.revenue || {};
+        const listPrice = revenue.list_price || 0;
+        const discounted = revenue.discounted || 0;
         const revenueSub = listPrice !== discounted 
             ? `定価 &yen;${listPrice.toLocaleString()}`
             : '';

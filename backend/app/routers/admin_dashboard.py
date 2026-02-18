@@ -122,8 +122,10 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
     ]
 
     # --- 本日の配信統計 ---
+    # DBはUTCで保存されているため、today_startをUTCに変換して比較
+    today_start_utc = today_start.astimezone(UTC).replace(tzinfo=None)
     today_deliveries = db.query(Delivery).filter(
-        Delivery.created_at >= today_start,
+        Delivery.created_at >= today_start_utc,
     ).all()
     today_sent = sum(d.total_count for d in today_deliveries)
     today_success = sum(d.success_count for d in today_deliveries)
@@ -132,11 +134,11 @@ async def get_dashboard(db: Session = Depends(get_db), _=Depends(require_admin))
 
     # --- 本日のエラー/警告 ---
     today_errors = db.query(sa_func.count(SystemLog.id)).filter(
-        SystemLog.created_at >= today_start,
+        SystemLog.created_at >= today_start_utc,
         SystemLog.level.in_(["ERROR", "CRITICAL"]),
     ).scalar()
     today_warnings = db.query(sa_func.count(SystemLog.id)).filter(
-        SystemLog.created_at >= today_start,
+        SystemLog.created_at >= today_start_utc,
         SystemLog.level == "WARNING",
     ).scalar()
 
