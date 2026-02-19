@@ -421,3 +421,50 @@ def send_renewal_complete_email(
     except Exception as e:
         logger.error(f"更新完了メール送信失敗: {to_email} - {e}")
         return False
+
+
+def send_admin_alert_email(subject: str, body: str) -> bool:
+    """管理者にアラートメールを送信"""
+    from app.core.database import SessionLocal
+    from app.models.user import User
+    
+    db = SessionLocal()
+    try:
+        # 管理者ユーザーを取得
+        admins = db.query(User).filter(User.role == "admin", User.is_active == True).all()
+        
+        if not admins:
+            logger.warning("アラートメール送信先の管理者が見つかりません")
+            return False
+        
+        resend.api_key = _get_resend_api_key()
+        
+        # HTMLに変換（改行を<br>に）
+        html_body = body.replace("\n", "<br>")
+        html = f"""
+        <div style="font-family: monospace; max-width: 800px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
+            <h2 style="color: #dc3545;">⚠️ システムアラート</h2>
+            <div style="background: #fff; padding: 20px; border-radius: 5px; white-space: pre-wrap;">
+                {html_body}
+            </div>
+        </div>
+        """
+        
+        for admin in admins:
+            try:
+                resend.Emails.send({
+                    "from": get_from_email(),
+                    "to": [admin.email],
+                    "subject": subject,
+                    "html": html,
+                })
+                logger.info(f"アラートメール送信: {admin.email}")
+            except Exception as e:
+                logger.error(f"アラートメール送信失敗: {admin.email} - {e}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"アラートメール送信エラー: {e}")
+        return False
+    finally:
+        db.close()
