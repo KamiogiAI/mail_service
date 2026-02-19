@@ -1,5 +1,6 @@
 """日次レポートメール送信サービス"""
 import logging
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
@@ -253,9 +254,9 @@ def send_daily_report():
     try:
         today = datetime.now(JST).date()
         
-        # 管理者ユーザー取得 (is_admin=True)
+        # 管理者ユーザー取得 (role="admin")
         admins = db.query(User).filter(
-            User.is_admin == True,
+            User.role == "admin",
             User.is_active == True,
         ).all()
         
@@ -270,8 +271,12 @@ def send_daily_report():
         success = 0
         fail = 0
         
-        for admin in admins:
+        for i, admin in enumerate(admins):
             try:
+                # Resendレート制限対策: 2通目以降は5秒待機
+                if i > 0:
+                    time.sleep(5)
+                
                 send_email(
                     to_email=admin.email,
                     subject=subject,
