@@ -43,12 +43,20 @@ async def list_users(
     """ユーザー一覧"""
     q = db.query(User)
     if search:
-        q = q.filter(
-            (User.email.contains(search))
-            | (User.member_no.contains(search))
-            | (User.name_last.contains(search))
-            | (User.name_first.contains(search))
-        )
+        # 数字のみの場合はID/member_noで完全一致検索
+        if search.isdigit():
+            q = q.filter(
+                (User.id == int(search))
+                | (User.member_no == search)
+            )
+        else:
+            # それ以外は部分一致検索
+            q = q.filter(
+                (User.email.contains(search))
+                | (User.member_no.contains(search))
+                | (User.name_last.contains(search))
+                | (User.name_first.contains(search))
+            )
     if role:
         q = q.filter(User.role == role)
 
