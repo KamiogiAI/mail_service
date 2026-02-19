@@ -302,7 +302,8 @@ async def my_subscriptions(
                     actual_price = int(plan_price * (100 - discount_percent) / 100)
                 elif discount_amount:
                     actual_price = max(0, plan_price - discount_amount)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Stripe割引情報取得失敗 (subscription_id={sub.stripe_subscription_id}): {e}")
                 pass  # Stripe取得失敗時は定価を使用
 
         info = SubscriptionInfo(

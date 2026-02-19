@@ -342,7 +342,8 @@ def remove_subscription_coupon(subscription_id: str) -> bool:
     try:
         stripe.Subscription.modify(subscription_id, coupon="")
         return True
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Stripeクーポン削除失敗 (subscription_id={subscription_id}): {e}")
         return False
 
 
@@ -377,7 +378,8 @@ def get_subscription_discount_info(subscription_id: str) -> dict:
             "discount_percent": discount_percent,
             "discount_amount": discount_amount,
         }
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Stripe割引情報取得失敗 (subscription_id={subscription_id}): {e}")
         return {"stripe_coupon_id": None, "discount_name": None, "discount_percent": None, "discount_amount": None}
 
 

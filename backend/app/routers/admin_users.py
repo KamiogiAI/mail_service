@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel, EmailStr
 
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.models.user import User
 from app.models.subscription import Subscription
 from app.models.plan import Plan
@@ -13,6 +14,7 @@ from app.services.mail_service import send_verify_code_email
 from app.routers.deps import require_admin
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
+logger = get_logger(__name__)
 
 ACTIVE_STATUSES = ("trialing", "active", "past_due", "admin_added")
 
@@ -172,7 +174,8 @@ async def toggle_active(user_id: int, db: Session = Depends(get_db), _=Depends(r
             try:
                 stripe_service.cancel_subscription(sub.stripe_subscription_id, at_period_end=True)
                 sub.cancel_at_period_end = True
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Stripe購読キャンセル失敗 (subscription_id={sub.stripe_subscription_id}): {e}")
                 pass  # Stripe側で既にキャンセル済みの場合など
     else:
         # 有効化する場合、キャンセル予約を解除
@@ -186,7 +189,8 @@ async def toggle_active(user_id: int, db: Session = Depends(get_db), _=Depends(r
             try:
                 stripe_service.resume_subscription(sub.stripe_subscription_id)
                 sub.cancel_at_period_end = False
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Stripe購読再開失敗 (subscription_id={sub.stripe_subscription_id}): {e}")
                 pass  # Stripe側でエラーの場合
 
     user.is_active = not user.is_active
@@ -220,8 +224,8 @@ async def update_user_subscriptions(
             if sub.stripe_subscription_id:
                 try:
                     stripe_service.cancel_subscription_immediately(sub.stripe_subscription_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"Stripe購読即時キャンセル失敗 (subscription_id={sub.stripe_subscription_id}): {e}")
             sub.status = "canceled"
 
     # 追加: 新たにチェックされたプラン
@@ -263,8 +267,8 @@ async def delete_user(user_id: int, db: Session = Depends(get_db), admin=Depends
         if sub.stripe_subscription_id:
             try:
                 stripe_service.cancel_subscription_immediately(sub.stripe_subscription_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"ユーザー削除時のStripe購読キャンセル失敗 (subscription_id={sub.stripe_subscription_id}): {e}")
         sub.status = "canceled"
         sub.user_id = None
 

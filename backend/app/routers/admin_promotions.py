@@ -16,12 +16,14 @@ def parse_expires_date(date_str: str) -> datetime:
     return dt
 
 from app.core.database import get_db
+from app.core.logging import get_logger
 from app.models.promotion_code import PromotionCode
 from app.models.plan import Plan
 from app.services import stripe_service
 from app.routers.deps import require_admin
 
 router = APIRouter(prefix="/api/admin/promotions", tags=["admin-promotions"])
+logger = get_logger(__name__)
 
 
 class PromotionCodeCreate(BaseModel):
@@ -215,7 +217,8 @@ async def update_promotion(
         if promo.stripe_promotion_code_id:
             try:
                 stripe_service.deactivate_promotion_code(promo.stripe_promotion_code_id)
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Stripeプロモーションコード無効化失敗 (promo_id={promo.stripe_promotion_code_id}): {e}")
                 pass  # 既に無効化されている場合など
 
         # 新しい値を決定
@@ -295,8 +298,8 @@ async def deactivate_promotion(
     if promo.stripe_promotion_code_id:
         try:
             stripe_service.deactivate_promotion_code(promo.stripe_promotion_code_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Stripeプロモーションコード無効化失敗 (promo_id={promo.stripe_promotion_code_id}): {e}")
 
     promo.is_active = False
     db.commit()
