@@ -10,6 +10,7 @@
 - [異常] 日次レポート YYYY-MM-DD (失敗あり)
 - 日次レポート YYYY-MM-DD（実行なし）
 """
+import time as time_mod
 from datetime import datetime, timedelta, time, date
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
@@ -202,7 +203,11 @@ def send_daily_report(force: bool = False):
 
         resend.api_key = get_resend_api_key()
 
-        for admin in admins:
+        for i, admin in enumerate(admins):
+            # Resendレート制限対策: 2通目以降は5秒待機
+            if i > 0:
+                time_mod.sleep(5)
+            
             item = ReportDeliveryItem(
                 report_delivery_id=report_delivery.id,
                 admin_user_id=admin.id,
@@ -302,7 +307,11 @@ def send_error_alert(
 
         resend.api_key = get_resend_api_key()
 
-        for admin in admins:
+        for i, admin in enumerate(admins):
+            # Resendレート制限対策: 2通目以降は5秒待機
+            if i > 0:
+                time_mod.sleep(5)
+            
             try:
                 resend.Emails.send({
                     "from": get_from_email(),
