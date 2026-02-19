@@ -137,13 +137,17 @@ def _get_or_create_portal_configurations() -> dict:
         "invoice_history": {"enabled": True},
     }
     
-    # 既存のConfigurationを取得
-    configs = stripe.billing_portal.Configuration.list(limit=10)
+    # 既存のConfigurationを取得（アクティブなもののみ）
+    configs = stripe.billing_portal.Configuration.list(limit=10, active=True)
     
     trial_config_id = None
     normal_config_id = None
     
     for config in configs.data:
+        # 念のためアクティブかどうか再確認
+        if not getattr(config, 'active', True):
+            continue
+            
         sub_update = config.features.subscription_update
         headline = getattr(config.business_profile, 'headline', '') if config.business_profile else ''
         
