@@ -191,6 +191,15 @@ def main():
         max_instances=1,
     )
 
+    # 毎日3:00 JST: Stripe⇔DB整合性チェック
+    from app.scheduler.stripe_sync_checker import check_stripe_db_consistency
+    scheduler.add_job(
+        check_stripe_db_consistency,
+        CronTrigger(hour=3, minute=0, timezone="Asia/Tokyo"),
+        id="stripe_sync_checker",
+        max_instances=1,
+    )
+
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
