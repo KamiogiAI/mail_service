@@ -22,13 +22,13 @@ JST = ZoneInfo("Asia/Tokyo")
 def generate_daily_report_html(db: Session, target_date: date) -> str:
     """日次レポートのHTML生成"""
     
-    # 本日の配信データ取得
-    start_of_day = datetime.combine(target_date, datetime.min.time())
-    end_of_day = datetime.combine(target_date, datetime.max.time())
+    # 本日の配信データ取得（JSTで日付範囲を指定）
+    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=JST)
+    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=JST)
     
     deliveries = db.query(Delivery).filter(
-        Delivery.started_at >= start_of_day,
-        Delivery.started_at <= end_of_day,
+        Delivery.created_at >= start_of_day,
+        Delivery.created_at <= end_of_day,
     ).all()
     
     # 統計計算
@@ -55,7 +55,7 @@ def generate_daily_report_html(db: Session, target_date: date) -> str:
     plan_results = []
     for d in deliveries:
         plan = db.query(Plan).filter(Plan.id == d.plan_id).first()
-        plan_name = plan.name if plan else "(手動送信)"
+        plan_name = plan.name.replace("\n", " ") if plan else "(手動送信)"
         
         # 所要時間計算
         duration = "-"
@@ -96,7 +96,7 @@ def generate_daily_report_html(db: Session, target_date: date) -> str:
                 status_text = "エラー"
         
         plan_status_list.append({
-            "plan_name": plan.name,
+            "plan_name": plan.name.replace("\n", " "),
             "batch_enabled": "ON" if plan.batch_send_enabled else "OFF",
             "status": status_text,
         })
