@@ -1,4 +1,4 @@
-"""毎分: 送信対象プランチェック + 日次レポート"""
+"""毎分: 送信対象プランチェック"""
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
@@ -8,7 +8,6 @@ from app.core.redis import get_sync_redis
 from app.models.plan import Plan
 from app.models.progress_plan import ProgressPlan
 from app.services.sheets_service import is_today_in_sheets
-from app.services.report_service import try_send_daily_report
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -25,12 +24,6 @@ def check_plans():
     # ハートビート書き込み
     redis = get_sync_redis()
     redis.set("scheduler:heartbeat", now.isoformat(), ex=180)
-
-    # 日次レポート送信チェック (23:55 JST)
-    try:
-        try_send_daily_report()
-    except Exception as e:
-        logger.error(f"日次レポート送信エラー: {e}")
 
     # 緊急停止チェック
     if redis.get("emergency_stop"):
