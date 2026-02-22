@@ -856,11 +856,10 @@ function switchHistoryTab(btn) {
 }
 
 // --- 配信履歴 ---
-let currentHistoryPage = 1;
 async function loadHistoryCard() {
     const wrapper = document.getElementById('history-card');
     try {
-        const data = await API.get(`/api/me/delivery-history?page=1&per_page=5`);
+        const data = await API.get(`/api/me/delivery-history?page=1&per_page=3`);
         if (data.items.length === 0) {
             wrapper.innerHTML = '';
             return;
@@ -869,59 +868,72 @@ async function loadHistoryCard() {
             <div class="dash-card">
                 <div class="dash-card-title">最近の配信</div>
                 <div id="history-list">
-                    ${data.items.map(i => `
-                        <div class="answer-row">
-                            <span class="answer-label" style="min-width:auto;">${esc(i.subject)}</span>
-                            <span class="answer-value" style="color:#999;font-size:12px;">${i.sent_at ? fmtDate(i.sent_at) : '-'}</span>
+                    ${data.items.map((i, idx) => `
+                        <div class="answer-row" style="display:flex;align-items:center;gap:8px;">
+                            <span class="answer-label" style="min-width:auto;flex:1;">${esc(i.subject)}</span>
+                            <span class="answer-value" style="color:#999;font-size:12px;white-space:nowrap;">${i.sent_at ? fmtDate(i.sent_at) : '-'}</span>
+                            ${idx === 0 ? `<button class="d-btn d-btn-ghost d-btn-xs" style="font-size:11px;padding:4px 8px;" onclick="showEmailContent(${i.delivery_id})">内容を見る</button>` : ''}
                         </div>
                     `).join('')}
                 </div>
-                ${data.total > 5 ? `
-                <div style="margin-top:12px;">
-                    <button class="d-btn d-btn-ghost d-btn-sm" onclick="expandHistory()">すべて表示</button>
-                </div>` : ''}
-                <div id="history-expanded" style="display:none;"></div>
             </div>`;
     } catch {
         wrapper.innerHTML = '';
     }
 }
 
-async function expandHistory() {
-    const el = document.getElementById('history-expanded');
-    if (el.style.display !== 'none') { el.style.display = 'none'; return; }
-    el.style.display = '';
-    el.innerHTML = '<p style="color:#999;font-size:13px;">読み込み中...</p>';
-    await loadHistoryPage(1);
-}
+async function showEmailContent(deliveryId) {
+    // 既存のモーダルがあれば削除
+    const existing = document.getElementById('email-content-modal');
+    if (existing) existing.remove();
 
-async function loadHistoryPage(page) {
-    currentHistoryPage = page;
-    const el = document.getElementById('history-expanded');
+    // モーダル作成
+    const modal = document.createElement('div');
+    modal.id = 'email-content-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;box-sizing:border-box;';
+    modal.innerHTML = `
+        <div style="background:#fff;border-radius:12px;max-width:600px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;">
+            <div style="padding:16px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-weight:600;">メール内容</span>
+                <button onclick="closeEmailModal()" style="background:none;border:none;font-size:24px;cursor:pointer;color:#666;">&times;</button>
+            </div>
+            <div id="email-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+                <p style="color:#999;">読み込み中...</p>
+            </div>
+        </div>
+    `;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeEmailModal();
+    });
+    document.body.appendChild(modal);
+
+    // メール内容を取得
     try {
-        const data = await API.get(`/api/me/delivery-history?page=${page}&per_page=20`);
-        el.innerHTML = `
-            ${data.items.map(i => `
-                <div class="answer-row">
-                    <span class="answer-label" style="min-width:auto;">${esc(i.subject)}</span>
-                    <span class="answer-value" style="color:#999;font-size:12px;">${i.sent_at ? fmtDate(i.sent_at) : '-'}</span>
-                </div>
-            `).join('')}
-            ${renderHistoryPagination(data.total, 20, page)}`;
+        const data = await API.get(`/api/me/email-content/${deliveryId}`);
+        const blob = new Blob([data.body_html], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
+        
+        const modalBody = document.getElementById('email-modal-body');
+        modalBody.innerHTML = `
+            <div style="margin-bottom:12px;">
+                <div style="font-weight:600;font-size:15px;">${esc(data.subject)}</div>
+                <div style="font-size:12px;color:#999;margin-top:4px;">${data.sent_at ? fmtDate(data.sent_at) : ''}</div>
+            </div>
+            <iframe sandbox="allow-same-origin" style="width:100%;height:400px;border:1px solid #eee;border-radius:8px;"></iframe>
+        `;
+        const iframe = modalBody.querySelector('iframe');
+        iframe.src = blobUrl;
+        iframe.onload = () => URL.revokeObjectURL(blobUrl);
     } catch (e) {
-        el.innerHTML = `<p style="color:#c00;font-size:13px;">${esc(e.message)}</p>`;
+        document.getElementById('email-modal-body').innerHTML = `
+            <p style="color:#999;text-align:center;padding:40px 0;">この配信の本文は保存されていません</p>
+        `;
     }
 }
 
-function renderHistoryPagination(total, perPage, current) {
-    const pages = Math.ceil(total / perPage);
-    if (pages <= 1) return '';
-    let html = '<div style="display:flex;gap:4px;justify-content:center;margin-top:12px;">';
-    for (let i = 1; i <= pages; i++) {
-        const active = i === current ? 'background:#111;color:#fff;' : 'background:#f2f2f2;color:#333;';
-        html += `<button onclick="loadHistoryPage(${i})" style="padding:4px 10px;border:none;border-radius:6px;cursor:pointer;font-size:12px;${active}">${i}</button>`;
-    }
-    return html + '</div>';
+function closeEmailModal() {
+    const modal = document.getElementById('email-content-modal');
+    if (modal) modal.remove();
 }
 
 // --- 決済情報 ---

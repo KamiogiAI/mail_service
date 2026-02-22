@@ -15,6 +15,25 @@ jinja_env = Environment(
 )
 
 
+def wrap_body_html(body: str, unsubscribe_url: str = None) -> str:
+    """
+    プレーンテキストのメール本文をHTMLテンプレートでラップする。
+    
+    Args:
+        body: プレーンテキストの本文
+        unsubscribe_url: 配信停止URL（オプション）
+    
+    Returns:
+        HTMLでラップされた本文
+    """
+    template = jinja_env.get_template("email_base.html")
+    return template.render(
+        body=body,
+        unsubscribe_url=unsubscribe_url,
+        site_name=get_site_name(),
+    )
+
+
 def send_email(
     to_email: str,
     subject: str,
