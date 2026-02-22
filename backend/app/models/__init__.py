@@ -20,6 +20,7 @@ from app.models.promotion_code import PromotionCode
 from app.models.user_answer_history import UserAnswerHistory
 from app.models.processed_stripe_event import ProcessedStripeEvent
 from app.models.subscription_plan_change import SubscriptionPlanChange
+from app.models.user_email_history import UserEmailHistory
 
 __all__ = [
     "User",
@@ -43,5 +44,6 @@ __all__ = [
     "UserAnswerHistory",
     "ProcessedStripeEvent",
     "SubscriptionPlanChange",
+    "UserEmailHistory",
 ]
 from app.models.invoice_record import InvoiceRecord

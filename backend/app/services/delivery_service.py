@@ -18,7 +18,8 @@ from app.models.system_log import SystemLog
 from app.models.progress_plan import ProgressPlan
 from app.services.openai_service import generate_email_content
 from app.services.variable_resolver import resolve_variables, build_answers_dict
-from app.services.resend_service import send_email
+from app.services.resend_service import send_email, wrap_body_html
+from app.services.email_history_service import save_email_history
 import json
 from app.services.firestore_external_service import load_external_data
 from app.services.summary_service import (
@@ -896,12 +897,15 @@ def _try_send_email(
     if user.unsubscribe_token:
         unsubscribe_url = f"{settings.SITE_URL}/api/me/unsubscribe?token={user.unsubscribe_token}"
 
+    # HTMLでラップ（送信と履歴保存で同じHTMLを使用）
+    body_html = wrap_body_html(body, unsubscribe_url)
+
     try:
         result = send_email(
             to_email=user.email,
             subject=subject,
-            body=body,
-            unsubscribe_url=unsubscribe_url,
+            body=body_html,
+            is_html=True,
             api_key=api_key,
         )
 
@@ -910,12 +914,25 @@ def _try_send_email(
             delivery.subject = subject
             db.commit()
 
-        # あらすじ生成
+        # あらすじ生成（プレーンテキストを使用）
         if summary_setting:
             generate_and_save_summary(
                 db, plan.id, user.id, body, summary_setting,
                 model=plan.model, api_key=api_key,
             )
+
+        # メール履歴を保存
+        try:
+            save_email_history(
+                db=db,
+                user_id=user.id,
+                plan_id=plan.id,
+                delivery_id=delivery.id,
+                subject=subject,
+                body_html=body_html,
+            )
+        except Exception as hist_err:
+            logger.warning(f"メール履歴保存失敗（送信は成功）: user_id={user.id}, error={hist_err}")
 
         return True, ""
 
