@@ -368,6 +368,11 @@ const SubscriptionsPage = {
 
         try {
             const data = await API.get(`/api/admin/subscriptions/${subscriptionId}/emails/${historyId}`);
+            
+            // HTMLをBlobURLに変換してiframeに渡す（二重エスケープ回避）
+            const blob = new Blob([data.body_html], { type: 'text/html' });
+            const blobUrl = URL.createObjectURL(blob);
+            
             area.innerHTML = `
                 <div style="border:1px solid #ddd;border-radius:4px;overflow:hidden;">
                     <div style="background:#f5f5f5;padding:12px;border-bottom:1px solid #ddd;">
@@ -375,9 +380,10 @@ const SubscriptionsPage = {
                         <span style="float:right;color:#666;font-size:12px;">${this.fmtDateTime(data.sent_at)}</span>
                     </div>
                     <iframe 
-                        srcdoc="${this.escAttr(data.body_html)}" 
+                        src="${blobUrl}" 
                         sandbox="allow-same-origin" 
-                        style="width:100%;height:400px;border:none;">
+                        style="width:100%;height:400px;border:none;"
+                        onload="URL.revokeObjectURL('${blobUrl}')">
                     </iframe>
                 </div>
             `;
