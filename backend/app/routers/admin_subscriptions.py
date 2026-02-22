@@ -274,6 +274,10 @@ async def get_email_detail(
     sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
     if not sub:
         raise HTTPException(status_code=404, detail="購読が見つかりません")
+    
+    # 退会済みユーザーの場合は履歴なし
+    if not sub.user_id:
+        raise HTTPException(status_code=404, detail="メール履歴が見つかりません")
 
     history = db.query(UserEmailHistory).filter(
         UserEmailHistory.id == history_id,
