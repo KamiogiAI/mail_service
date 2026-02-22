@@ -1,6 +1,6 @@
 """ユーザーメール履歴モデル
 
-購読管理画面からユーザー別に送信済みメールを確認するためのテーブル。
+マイページからユーザーが自分に送信されたメールを確認するためのテーブル。
 ユーザー×プランごとに最新10件のみ保持する。
 """
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
