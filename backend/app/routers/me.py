@@ -169,11 +169,36 @@ async def delivery_history(
         "page": page,
         "items": [
             {
+                "delivery_id": item.delivery_id,
                 "subject": delivery.subject or "(件名なし)",
                 "sent_at": item.sent_at.isoformat() if item.sent_at else None,
             }
             for item, delivery in items
         ],
+    }
+
+
+@router.get("/email-content/{delivery_id}")
+async def get_email_content(
+    delivery_id: int,
+    user: User = Depends(require_login),
+    db: Session = Depends(get_db),
+):
+    """配信メールの本文を取得"""
+    from app.models.user_email_history import UserEmailHistory
+    
+    history = db.query(UserEmailHistory).filter(
+        UserEmailHistory.delivery_id == delivery_id,
+        UserEmailHistory.user_id == user.id,
+    ).order_by(UserEmailHistory.sent_at.desc()).first()
+    
+    if not history:
+        raise HTTPException(status_code=404, detail="この配信の本文は保存されていません")
+    
+    return {
+        "subject": history.subject,
+        "body_html": history.body_html,
+        "sent_at": history.sent_at.isoformat() if history.sent_at else None,
     }
 
 
