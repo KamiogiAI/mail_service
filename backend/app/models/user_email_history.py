@@ -1,0 +1,20 @@
+"""ユーザーメール履歴モデル
+
+購読管理画面からユーザー別に送信済みメールを確認するためのテーブル。
+ユーザー×プランごとに最新10件のみ保持する。
+"""
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
+from app.core.database import Base
+
+
+class UserEmailHistory(Base):
+    __tablename__ = "user_email_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    plan_id = Column(Integer, ForeignKey("plans.id", ondelete="SET NULL"), nullable=True, index=True)
+    delivery_id = Column(Integer, ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
+    subject = Column(String(500), nullable=False)
+    body_html = Column(Text, nullable=False)
+    sent_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())

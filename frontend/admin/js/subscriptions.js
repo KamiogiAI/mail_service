@@ -328,8 +328,62 @@ const SubscriptionsPage = {
         }
 
         html += '</div>';
+
+        // メール履歴セクション
+        const emailHistory = data.email_history || [];
+        html += `
+            <div style="margin-top:24px;">
+                <h3 style="font-size:16px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #ddd;">メール履歴</h3>`;
+        
+        if (!user) {
+            html += '<p style="color:#999;">退会済みのため、メール履歴はありません</p>';
+        } else if (emailHistory.length === 0) {
+            html += '<p style="color:#999;">送信済みメールはありません</p>';
+        } else {
+            html += `<div style="max-height:300px;overflow-y:auto;">`;
+            emailHistory.forEach(h => {
+                html += `
+                    <div style="padding:12px;background:#fafafa;border:1px solid #eee;margin-bottom:8px;cursor:pointer;" 
+                         onclick="SubscriptionsPage.showEmailDetail(${data.subscription.id}, ${h.id})">
+                        <div style="font-weight:600;font-size:14px;margin-bottom:4px;">${this.esc(h.subject)}</div>
+                        <div style="font-size:12px;color:#666;">${this.fmtDateTime(h.sent_at)}</div>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+        }
+        html += '</div>';
+
+        // メール詳細表示エリア
+        html += `<div id="email-detail-area" style="margin-top:16px;display:none;"></div>`;
+
         body.innerHTML = html;
         this.updateFooterButtons();
+    },
+
+    async showEmailDetail(subscriptionId, historyId) {
+        const area = document.getElementById('email-detail-area');
+        area.style.display = 'block';
+        area.innerHTML = '<p>読み込み中...</p>';
+
+        try {
+            const data = await API.get(`/api/admin/subscriptions/${subscriptionId}/emails/${historyId}`);
+            area.innerHTML = `
+                <div style="border:1px solid #ddd;border-radius:4px;overflow:hidden;">
+                    <div style="background:#f5f5f5;padding:12px;border-bottom:1px solid #ddd;">
+                        <strong>${this.esc(data.subject)}</strong>
+                        <span style="float:right;color:#666;font-size:12px;">${this.fmtDateTime(data.sent_at)}</span>
+                    </div>
+                    <iframe 
+                        srcdoc="${this.escAttr(data.body_html)}" 
+                        sandbox="allow-same-origin" 
+                        style="width:100%;height:400px;border:none;">
+                    </iframe>
+                </div>
+            `;
+        } catch (e) {
+            area.innerHTML = `<p class="error-message">${e.message}</p>`;
+        }
     },
 
     renderAnswerView(q) {
@@ -532,12 +586,24 @@ const SubscriptionsPage = {
         return new Date(iso).toLocaleDateString('ja-JP');
     },
 
+    fmtDateTime(iso) {
+        if (!iso) return '-';
+        const d = new Date(iso);
+        return d.toLocaleDateString('ja-JP') + ' ' + d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    },
+
     esc(s) {
         if (!s) return '';
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
     },
+
+    escAttr(s) {
+        if (!s) return '';
+        return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    },
+
     // プラン名表示用: \n を除去
     escName(s) {
         return this.esc((s || '').replace(/\\n/g, ''));

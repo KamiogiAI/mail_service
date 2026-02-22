@@ -10,6 +10,7 @@ from app.models.subscription import Subscription
 from app.models.plan_question import PlanQuestion
 from app.models.user_answer import UserAnswer
 from app.models.user_answer_history import UserAnswerHistory
+from app.models.user_email_history import UserEmailHistory
 from app.routers.deps import require_admin
 
 router = APIRouter(prefix="/api/admin/subscriptions", tags=["admin-subscriptions"])
@@ -171,11 +172,29 @@ async def get_subscription_detail(
                     "carried_over": carried_over,
                 })
 
+    # メール履歴取得（このプランの最新10件、本文なし）
+    email_history = []
+    if sub.user_id and plan:
+        histories = db.query(UserEmailHistory).filter(
+            UserEmailHistory.user_id == sub.user_id,
+            UserEmailHistory.plan_id == plan.id,
+        ).order_by(UserEmailHistory.sent_at.desc()).limit(10).all()
+        
+        email_history = [
+            {
+                "id": h.id,
+                "subject": h.subject,
+                "sent_at": h.sent_at.isoformat() if h.sent_at else None,
+            }
+            for h in histories
+        ]
+
     return {
         "subscription": subscription_data,
         "user": user_data,
         "plan": {"id": plan.id, "name": plan.name} if plan else None,
         "answers": answers_data,
+        "email_history": email_history,
     }
 
 
@@ -242,3 +261,32 @@ async def save_subscription_answers(
 
     db.commit()
     return {"message": "回答を保存しました"}
+
+
+@router.get("/{subscription_id}/emails/{history_id}")
+async def get_email_detail(
+    subscription_id: int,
+    history_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(require_admin),
+):
+    """メール履歴詳細（本文含む）"""
+    sub = db.query(Subscription).filter(Subscription.id == subscription_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="購読が見つかりません")
+
+    history = db.query(UserEmailHistory).filter(
+        UserEmailHistory.id == history_id,
+        UserEmailHistory.user_id == sub.user_id,
+        UserEmailHistory.plan_id == sub.plan_id,
+    ).first()
+    
+    if not history:
+        raise HTTPException(status_code=404, detail="メール履歴が見つかりません")
+
+    return {
+        "id": history.id,
+        "subject": history.subject,
+        "body_html": history.body_html,
+        "sent_at": history.sent_at.isoformat() if history.sent_at else None,
+    }

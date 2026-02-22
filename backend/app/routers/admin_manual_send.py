@@ -15,7 +15,8 @@ from app.models.user import User
 from app.models.subscription import Subscription
 from app.models.delivery import Delivery
 from app.models.delivery_item import DeliveryItem
-from app.services.resend_service import send_email
+from app.services.resend_service import send_email, wrap_body_html
+from app.services.email_history_service import save_email_history
 from app.routers.deps import require_admin
 from app.core.logging import get_logger
 
@@ -78,12 +79,15 @@ async def manual_send_user(
     if user.unsubscribe_token:
         unsubscribe_url = f"{settings.SITE_URL}/api/me/unsubscribe?token={user.unsubscribe_token}"
 
+    # HTMLでラップ
+    body_html = wrap_body_html(req.body, unsubscribe_url)
+
     try:
         result = send_email(
             to_email=user.email,
             subject=req.subject,
-            body=req.body,
-            unsubscribe_url=unsubscribe_url,
+            body=body_html,
+            is_html=True,
         )
         item = DeliveryItem(
             delivery_id=delivery.id,
@@ -97,6 +101,20 @@ async def manual_send_user(
         delivery.success_count = 1
         delivery.fail_count = 0
         delivery.status = "success"
+
+        # メール履歴を保存（plan_id=None）
+        try:
+            save_email_history(
+                db=db,
+                user_id=user.id,
+                plan_id=None,
+                delivery_id=delivery.id,
+                subject=req.subject,
+                body_html=body_html,
+            )
+        except Exception as hist_err:
+            logger.warning(f"メール履歴保存失敗: user_id={user.id}, error={hist_err}")
+
     except Exception as e:
         item = DeliveryItem(
             delivery_id=delivery.id,
@@ -142,12 +160,15 @@ def _background_send_plan(delivery_id: int, user_ids: list[int], subject: str, b
             if user.unsubscribe_token:
                 unsubscribe_url = f"{settings.SITE_URL}/api/me/unsubscribe?token={user.unsubscribe_token}"
 
+            # HTMLでラップ
+            body_html = wrap_body_html(body, unsubscribe_url)
+
             try:
                 result = send_email(
                     to_email=user.email,
                     subject=subject,
-                    body=body,
-                    unsubscribe_url=unsubscribe_url,
+                    body=body_html,
+                    is_html=True,
                 )
                 item = DeliveryItem(
                     delivery_id=delivery.id,
@@ -161,6 +182,19 @@ def _background_send_plan(delivery_id: int, user_ids: list[int], subject: str, b
                 success_count += 1
                 delivery.success_count = success_count  # 1件ごとに更新
                 logger.info(f"手動送信成功: user_id={user.id}, email={user.email}")
+
+                # メール履歴を保存
+                try:
+                    save_email_history(
+                        db=db,
+                        user_id=user.id,
+                        plan_id=delivery.plan_id,
+                        delivery_id=delivery.id,
+                        subject=subject,
+                        body_html=body_html,
+                    )
+                except Exception as hist_err:
+                    logger.warning(f"メール履歴保存失敗: user_id={user.id}, error={hist_err}")
             except Exception as e:
                 item = DeliveryItem(
                     delivery_id=delivery.id,
