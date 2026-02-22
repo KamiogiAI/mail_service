@@ -3,7 +3,8 @@
 購読管理画面からユーザー別に送信済みメールを確認するためのテーブル。
 ユーザー×プランごとに最新10件のみ保持する。
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from app.core.database import Base
 
 
@@ -15,6 +16,6 @@ class UserEmailHistory(Base):
     plan_id = Column(Integer, ForeignKey("plans.id", ondelete="SET NULL"), nullable=True, index=True)
     delivery_id = Column(Integer, ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True)
     subject = Column(String(500), nullable=False)
-    body_html = Column(Text, nullable=False)
+    body_html = Column(MEDIUMTEXT, nullable=False)
     sent_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())

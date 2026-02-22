@@ -956,13 +956,17 @@ async function showEmailContent(deliveryId) {
         const blob = new Blob([data.body_html], { type: 'text/html' });
         const blobUrl = URL.createObjectURL(blob);
         
-        document.getElementById('email-modal-body').innerHTML = `
+        const modalBody = document.getElementById('email-modal-body');
+        modalBody.innerHTML = `
             <div style="margin-bottom:12px;">
                 <div style="font-weight:600;font-size:15px;">${esc(data.subject)}</div>
                 <div style="font-size:12px;color:#999;margin-top:4px;">${data.sent_at ? fmtDate(data.sent_at) : ''}</div>
             </div>
-            <iframe src="${blobUrl}" sandbox="allow-same-origin" style="width:100%;height:400px;border:1px solid #eee;border-radius:8px;" onload="URL.revokeObjectURL('${blobUrl}')"></iframe>
+            <iframe sandbox="allow-same-origin" style="width:100%;height:400px;border:1px solid #eee;border-radius:8px;"></iframe>
         `;
+        const iframe = modalBody.querySelector('iframe');
+        iframe.src = blobUrl;
+        iframe.onload = () => URL.revokeObjectURL(blobUrl);
     } catch (e) {
         document.getElementById('email-modal-body').innerHTML = `
             <p style="color:#999;text-align:center;padding:40px 0;">この配信の本文は保存されていません</p>

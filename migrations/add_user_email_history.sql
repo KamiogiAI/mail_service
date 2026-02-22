@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS user_email_history (
     sent_at DATETIME NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_user_plan_sent (user_id, plan_id, sent_at DESC),
+    INDEX idx_delivery_user (delivery_id, user_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE SET NULL,
     FOREIGN KEY (delivery_id) REFERENCES deliveries(id) ON DELETE SET NULL
