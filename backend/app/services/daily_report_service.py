@@ -1,7 +1,7 @@
 """日次レポートメール送信サービス"""
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
@@ -17,14 +17,19 @@ from app.services.resend_service import send_email
 
 logger = logging.getLogger(__name__)
 JST = ZoneInfo("Asia/Tokyo")
+UTC = timezone.utc
 
 
 def generate_daily_report_html(db: Session, target_date: date) -> str:
     """日次レポートのHTML生成"""
     
-    # 本日の配信データ取得（JSTで日付範囲を指定）
-    start_of_day = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=JST)
-    end_of_day = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=JST)
+    # 本日の配信データ取得（JSTで日付範囲を指定し、UTCに変換）
+    # DBのcreated_atはUTC（naive datetime）で保存されているため、
+    # JSTの範囲をUTCに変換してから比較する
+    start_of_day_jst = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=JST)
+    end_of_day_jst = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=JST)
+    start_of_day = start_of_day_jst.astimezone(UTC).replace(tzinfo=None)
+    end_of_day = end_of_day_jst.astimezone(UTC).replace(tzinfo=None)
     
     deliveries = db.query(Delivery).filter(
         Delivery.created_at >= start_of_day,
@@ -102,6 +107,7 @@ def generate_daily_report_html(db: Session, target_date: date) -> str:
         })
     
     # エラーログ取得 (ERROR, WARNING, CRITICALのみ)
+    # start_of_day/end_of_dayは既にUTCに変換済み
     errors = db.query(SystemLog).filter(
         SystemLog.created_at >= start_of_day,
         SystemLog.created_at <= end_of_day,
@@ -141,7 +147,7 @@ def generate_daily_report_html(db: Session, target_date: date) -> str:
 <body>
     <div class="container">
         <div class="header">
-            <h1>サッカーご飯 日次レポート</h1>
+            <h1>メール送信システム 日次レポート</h1>
             <div class="date">{target_date.strftime('%Y-%m-%d')}</div>
         </div>
         <div class="status-bar">全体ステータス: {overall_status}</div>
@@ -239,7 +245,7 @@ def generate_daily_report_html(db: Session, target_date: date) -> str:
                 </table>
             </div>
         </div>
-        <div class="footer">サッカーご飯メールサービス - 自動送信レポート</div>
+        <div class="footer">メール送信システム - 自動送信レポート</div>
     </div>
 </body>
 </html>
@@ -266,7 +272,7 @@ def send_daily_report():
         
         # レポートHTML生成
         html_content = generate_daily_report_html(db, today)
-        subject = f"サッカーご飯 日次レポート ({today.strftime('%Y-%m-%d')})"
+        subject = f"メール送信システム 日次レポート ({today.strftime('%Y-%m-%d')})"
         
         success = 0
         fail = 0
