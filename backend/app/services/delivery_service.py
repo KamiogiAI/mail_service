@@ -892,10 +892,8 @@ def _try_send_email(
         name_first=user.name_first,
     )
 
-    # 配信停止URL
-    unsubscribe_url = None
-    if user.unsubscribe_token:
-        unsubscribe_url = f"{settings.SITE_URL}/api/me/unsubscribe?token={user.unsubscribe_token}"
+    # 配信停止URL（マイページへのリンク）
+    unsubscribe_url = f"{settings.SITE_URL}/form/"
 
     # HTMLでラップ（送信と履歴保存で同じHTMLを使用）
     body_html = wrap_body_html(body, unsubscribe_url)
