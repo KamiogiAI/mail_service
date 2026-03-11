@@ -25,7 +25,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
         # コンテンツセキュリティポリシー
         # - default-src 'self': 同一オリジンのみ許可
-        # - script-src 'self' 'unsafe-inline': インラインスクリプト許可（必要に応じて調整）
+        # - script-src 'self' 'unsafe-inline': インラインスクリプト許可（unsafe-evalは除外済み）
         # - style-src 'self' 'unsafe-inline': インラインスタイル許可
         # - img-src 'self' data: https:: 画像は同一オリジン、data URI、HTTPS許可
         # - font-src 'self': フォントは同一オリジンのみ
@@ -33,7 +33,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # - frame-ancestors 'none': iframe埋め込み禁止
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https:; "
             "font-src 'self' https:; "
