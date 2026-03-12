@@ -1,4 +1,6 @@
 """レート制限設定（slowapi使用）"""
+import ipaddress
+import os
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -6,16 +8,62 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 
+# 信頼するプロキシのIPアドレス（Nginxなど）
+# 環境変数 TRUSTED_PROXIES でカンマ区切りで追加可能
+# 例: TRUSTED_PROXIES=192.168.1.100,10.0.0.0/8
+_DEFAULT_TRUSTED_PROXIES = {
+    "127.0.0.1",
+    "::1",
+    "172.17.0.0/16",  # Dockerデフォルトブリッジネットワーク
+}
+
+def _load_trusted_proxies() -> set:
+    """環境変数から信頼済みプロキシを読み込む"""
+    proxies = _DEFAULT_TRUSTED_PROXIES.copy()
+    env_proxies = os.environ.get("TRUSTED_PROXIES", "")
+    if env_proxies:
+        for p in env_proxies.split(","):
+            p = p.strip()
+            if p:
+                proxies.add(p)
+    return proxies
+
+TRUSTED_PROXIES = _load_trusted_proxies()
+
+
+def _is_trusted_proxy(ip: str) -> bool:
+    """プロキシIPが信頼できるものかチェック"""
+    try:
+        addr = ipaddress.ip_address(ip)
+        for trusted in TRUSTED_PROXIES:
+            try:
+                if "/" in trusted:
+                    if addr in ipaddress.ip_network(trusted, strict=False):
+                        return True
+                else:
+                    if addr == ipaddress.ip_address(trusted):
+                        return True
+            except ValueError:
+                continue
+    except ValueError:
+        pass
+    return False
+
+
 def get_client_ip(request: Request) -> str:
     """
     クライアントIPアドレスを取得
-    プロキシ経由の場合はX-Forwarded-Forヘッダーを参照
+    信頼できるプロキシからのリクエストのみX-Forwarded-Forを参照する。
+    直接接続または信頼できないプロキシの場合はTCPの接続元IPを使用。
+    (X-Forwarded-Forをそのまま信頼するとレート制限バイパスが可能になる)
     """
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # カンマ区切りの最初のIPを取得
-        return forwarded.split(",")[0].strip()
-    return get_remote_address(request)
+    direct_ip = get_remote_address(request)
+    if _is_trusted_proxy(direct_ip):
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            # カンマ区切りの最初のIPを取得 (クライアントIP)
+            return forwarded.split(",")[0].strip()
+    return direct_ip
 
 
 # Limiterインスタンス（アプリケーション全体で共有）

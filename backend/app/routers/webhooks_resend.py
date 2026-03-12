@@ -25,20 +25,22 @@ async def resend_webhook(request: Request):
         if not setting or not setting.resend_webhook_enabled:
             return {"received": True, "processed": False, "reason": "webhook_disabled"}
 
-        # 署名検証
+        # 署名検証 (fail-closed: シークレット未設定時は拒否)
         webhook_secret = get_resend_webhook_secret()
-        if webhook_secret:
-            headers = {
-                "svix-id": request.headers.get("svix-id", ""),
-                "svix-timestamp": request.headers.get("svix-timestamp", ""),
-                "svix-signature": request.headers.get("svix-signature", ""),
-            }
-            try:
-                wh = Webhook(webhook_secret)
-                wh.verify(payload, headers)
-            except WebhookVerificationError:
-                logger.error("Resend webhook署名検証失敗")
-                raise HTTPException(status_code=401, detail="Invalid signature")
+        if not webhook_secret:
+            logger.error("Resend webhook署名検証: RESEND_WEBHOOK_SECRET が未設定のためリクエストを拒否")
+            raise HTTPException(status_code=401, detail="Webhook secret not configured")
+        headers = {
+            "svix-id": request.headers.get("svix-id", ""),
+            "svix-timestamp": request.headers.get("svix-timestamp", ""),
+            "svix-signature": request.headers.get("svix-signature", ""),
+        }
+        try:
+            wh = Webhook(webhook_secret)
+            wh.verify(payload, headers)
+        except WebhookVerificationError:
+            logger.error("Resend webhook署名検証失敗")
+            raise HTTPException(status_code=401, detail="Invalid signature")
 
         # イベント処理
         import json

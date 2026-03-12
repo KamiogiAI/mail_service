@@ -33,6 +33,7 @@ class ProfileUpdate(BaseModel):
     name_last: Optional[str] = None
     name_first: Optional[str] = None
     email: Optional[EmailStr] = None
+    current_password: Optional[str] = None  # メールアドレス変更時は必須
 
 
 class ChangePasswordRequest(BaseModel):
@@ -58,12 +59,24 @@ async def update_profile(
     user: User = Depends(require_login),
     db: Session = Depends(get_db),
 ):
-    """プロフィール更新"""
+    """プロフィール更新
+    
+    メールアドレス変更にはcurrent_passwordの確認が必要。
+    （セッション乗っ取り時のアカウント永続化を防止）
+    """
     if data.name_last is not None:
         user.name_last = data.name_last
     if data.name_first is not None:
         user.name_first = data.name_first
     if data.email is not None and data.email != user.email:
+        # メールアドレス変更: 現在のパスワード確認が必須
+        if not data.current_password:
+            raise HTTPException(
+                status_code=400,
+                detail="メールアドレスの変更には現在のパスワードが必要です",
+            )
+        if not auth_service.verify_password(data.current_password, user.password_hash):
+            raise HTTPException(status_code=400, detail="パスワードが正しくありません")
         existing = auth_service.get_user_by_email(db, data.email)
         if existing:
             raise HTTPException(status_code=400, detail="このメールアドレスは既に使用されています")
