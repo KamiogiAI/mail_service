@@ -1,4 +1,6 @@
 """レート制限設定（slowapi使用）"""
+import ipaddress
+import os
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -7,17 +9,30 @@ from starlette.responses import JSONResponse
 
 
 # 信頼するプロキシのIPアドレス（Nginxなど）
-# 本番では実際のプロキシIPをここに列挙する
-TRUSTED_PROXIES = {
+# 環境変数 TRUSTED_PROXIES でカンマ区切りで追加可能
+# 例: TRUSTED_PROXIES=192.168.1.100,10.0.0.0/8
+_DEFAULT_TRUSTED_PROXIES = {
     "127.0.0.1",
     "::1",
-    "172.16.0.0/12",  # Docker内部ネットワーク
+    "172.17.0.0/16",  # Dockerデフォルトブリッジネットワーク
 }
+
+def _load_trusted_proxies() -> set:
+    """環境変数から信頼済みプロキシを読み込む"""
+    proxies = _DEFAULT_TRUSTED_PROXIES.copy()
+    env_proxies = os.environ.get("TRUSTED_PROXIES", "")
+    if env_proxies:
+        for p in env_proxies.split(","):
+            p = p.strip()
+            if p:
+                proxies.add(p)
+    return proxies
+
+TRUSTED_PROXIES = _load_trusted_proxies()
 
 
 def _is_trusted_proxy(ip: str) -> bool:
     """プロキシIPが信頼できるものかチェック"""
-    import ipaddress
     try:
         addr = ipaddress.ip_address(ip)
         for trusted in TRUSTED_PROXIES:
