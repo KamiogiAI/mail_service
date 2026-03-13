@@ -2,6 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, EmailStr
+from typing import Optional
 
 from app.core.database import get_db
 from app.core.redis import get_redis
@@ -28,8 +30,16 @@ from app.services import auth_service
 from app.services.mail_service import send_verify_code_email, send_password_reset_email, send_welcome_email
 from app.services.email_utils import normalize_email, validate_email_for_registration
 from app.routers.deps import get_current_user, require_login
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+class ResendCodeRequest(BaseModel):
+    """認証コード再送リクエスト"""
+    email: EmailStr
 
 
 @router.post("/register", response_model=AuthResponse)
@@ -87,7 +97,7 @@ async def verify_email(
     # メール認証済みに更新
     user = auth_service.get_user_by_id(db, req.user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+        raise HTTPException(status_code=400, detail="認証に失敗しました")
     user.email_verified = True
     db.commit()
 
@@ -118,25 +128,38 @@ async def verify_email(
 @limiter.limit(VERIFY_CODE_RATE_LIMIT)
 async def resend_verify_code(
     request: Request,
-    user_id: int,
+    req: ResendCodeRequest,
     db: Session = Depends(get_db),
     r=Depends(get_redis),
 ):
-    """認証コード再送"""
-    user = auth_service.get_user_by_id(db, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
-
-    code = await auth_service.generate_verify_code(r, user.id)
-    if code is None:
-        raise HTTPException(status_code=429, detail="認証がロックされています。しばらくお待ちください。")
-
-    send_verify_code_email(
-        to_email=user.email,
-        name=f"{user.name_last} {user.name_first}",
-        code=code,
-    )
-    return AuthResponse(message="認証コードを再送しました")
+    """認証コード再送
+    
+    セキュリティ: メールアドレスベースで受け付け、
+    ユーザーの存在有無に関わらず同一レスポンスを返す（ID enumeration防止）
+    """
+    # メールアドレス正規化
+    normalized_email = normalize_email(req.email)
+    user = auth_service.get_user_by_email(db, normalized_email)
+    
+    # ユーザーが存在し、未認証の場合のみ送信（レスポンスは常に同一）
+    if user and not user.email_verified:
+        code = await auth_service.generate_verify_code(r, user.id)
+        if code:
+            send_verify_code_email(
+                to_email=user.email,
+                name=f"{user.name_last} {user.name_first}",
+                code=code,
+            )
+            logger.info(f"認証コード再送: user_id={user.id}")
+        else:
+            # ロックされている場合もレスポンスは同一（タイミング攻撃対策）
+            logger.info(f"認証コード再送: ロック中 user_id={user.id}")
+    else:
+        # ユーザー不存在または既に認証済み
+        logger.info(f"認証コード再送: 対象なし email={normalized_email}")
+    
+    # 常に同一レスポンス（存在有無を漏らさない）
+    return AuthResponse(message="メールアドレスが登録されている場合、認証コードを送信しました")
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -241,7 +264,7 @@ async def confirm_password_reset(
 
     user = auth_service.get_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="ユーザーが見つかりません")
+        raise HTTPException(status_code=400, detail="リセットに失敗しました")
 
     user.password_hash = auth_service.hash_password(req.new_password)
     db.commit()
