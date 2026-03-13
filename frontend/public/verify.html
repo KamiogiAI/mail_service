@@ -38,6 +38,7 @@
     <script>
         const params = new URLSearchParams(location.search);
         const userId = params.get('user_id');
+        const email = params.get('email');
 
         async function verify() {
             const errEl = document.getElementById('error');
@@ -68,10 +69,16 @@
         }
 
         async function resendCode() {
+            if (!email) {
+                alert('メールアドレス情報がありません。再度登録してください。');
+                return;
+            }
             try {
-                const res = await fetch(`/api/auth/resend-code?user_id=${userId}`, {
+                const res = await fetch('/api/auth/resend-code', {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
+                    body: JSON.stringify({ email: email }),
                 });
                 const data = await res.json();
                 if (!res.ok) {
@@ -80,7 +87,7 @@
                               : 'エラーが発生しました';
                     throw new Error(msg);
                 }
-                alert('認証コードを再送しました');
+                alert(data.message || '認証コードを再送しました');
             } catch (e) {
                 alert(e.message);
             }
