@@ -280,16 +280,27 @@ def _handle_subscription_created(db: Session, data: dict):
         logger.warning(f"subscription.created: プラン不明 price_id={price_id}")
         return
 
-    # 期間情報取得
+    # 期間情報取得: トップレベル → items.data[0] の順でフォールバック
+    # (Stripe API 2025-12-15.clover 以降、current_period_* は items 内に移動)
     trial_end = None
     current_period_start = None
     current_period_end = None
     if data.get("trial_end"):
         trial_end = datetime.fromtimestamp(data["trial_end"])
+    
+    # トップレベルから取得
     if data.get("current_period_start"):
         current_period_start = datetime.fromtimestamp(data["current_period_start"])
     if data.get("current_period_end"):
         current_period_end = datetime.fromtimestamp(data["current_period_end"])
+    
+    # トップレベルにない場合、items.data[0] から取得
+    if (current_period_start is None or current_period_end is None) and items:
+        item = items[0]
+        if current_period_start is None and item.get("current_period_start"):
+            current_period_start = datetime.fromtimestamp(item["current_period_start"])
+        if current_period_end is None and item.get("current_period_end"):
+            current_period_end = datetime.fromtimestamp(item["current_period_end"])
 
     # ディスカウントからプロモーションコードを取得
     promotion_code_id = None
@@ -343,9 +354,22 @@ def _handle_subscription_updated(db: Session, data: dict, event_id: str, previou
     status = data.get("status", "active")
     cancel_at_period_end = data.get("cancel_at_period_end", False)
 
+    # 期間情報: トップレベル → items.data[0] の順でフォールバック
+    # (Stripe API 2025-12-15.clover 以降、current_period_* は items 内に移動)
     period_start = data.get("current_period_start")
     period_end = data.get("current_period_end")
     trial_end = data.get("trial_end")
+
+    # トップレベルにない場合、items.data[0] から取得
+    items = data.get("items", {}).get("data", [])
+    if items and (period_start is None or period_end is None):
+        item = items[0]
+        if period_start is None:
+            period_start = item.get("current_period_start")
+        if period_end is None:
+            period_end = item.get("current_period_end")
+
+    logger.info(f"subscription.updated: stripe_sub_id={stripe_sub_id}, status={status}, period_end={period_end}")
 
     # 1. 基本情報更新 (ステータス・期間)
     subscription_service.update_subscription_from_stripe(
