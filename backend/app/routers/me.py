@@ -287,23 +287,24 @@ async def save_answers(
         Subscription.status.in_(active_statuses),
     ).first()
 
-    # 購読がない場合、プラン自体が存在するかチェック（新規購読フロー対応）
+    # 購読がない場合は 403 を返す（IDOR対策: 未購読ユーザーの回答書き込みを禁止）
     if not has_subscription:
-        plan = db.query(Plan).filter(Plan.id == plan_id, Plan.is_active == True).first()
-        if not plan:
-            raise HTTPException(status_code=404, detail="プランが見つかりません")
+        raise HTTPException(status_code=403, detail="このプランに加入していません")
 
-    # track_changes=True の質問IDセットを取得
-    tracked_questions = db.query(PlanQuestion).filter(
+    # このプランに属する質問IDセットを取得（IDOR対策: 他プランへの書き込み防止）
+    all_plan_questions = db.query(PlanQuestion).filter(
         PlanQuestion.plan_id == plan_id,
-        PlanQuestion.track_changes == True,
     ).all()
-    tracked_map = {q.id: q for q in tracked_questions}
+    valid_question_ids = {q.id for q in all_plan_questions}
+    tracked_map = {q.id: q for q in all_plan_questions if q.track_changes}
 
     for ans in answers:
         qid = ans.get("question_id")
         value = ans.get("answer", "")
         if not qid:
+            continue
+        # このプランに属さない question_id はスキップ（IDOR対策）
+        if qid not in valid_question_ids:
             continue
 
         existing = db.query(UserAnswer).filter(
