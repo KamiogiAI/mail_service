@@ -98,13 +98,14 @@
                 errEl.textContent = 'パスワードが要件を満たしていません';
                 return;
             }
+            const email = document.getElementById('email').value;
             try {
                 const res = await fetch('/api/auth/register', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
                     body: JSON.stringify({
-                        email: document.getElementById('email').value,
+                        email: email,
                         password: document.getElementById('password').value,
                         name_last: document.getElementById('name-last').value,
                         name_first: document.getElementById('name-first').value,
@@ -118,9 +119,10 @@
                     throw new Error(msg);
                 }
                 const planId = new URLSearchParams(location.search).get('plan_id');
+                const encodedEmail = encodeURIComponent(email);
                 const redirectUrl = planId 
-                    ? `verify.html?user_id=${data.user_id}&plan_id=${planId}`
-                    : `verify.html?user_id=${data.user_id}`;
+                    ? `verify.html?user_id=${data.user_id}&email=${encodedEmail}&plan_id=${planId}`
+                    : `verify.html?user_id=${data.user_id}&email=${encodedEmail}`;
                 location.href = redirectUrl;
             } catch (e) {
                 errEl.textContent = e.message;
