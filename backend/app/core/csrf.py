@@ -1,8 +1,10 @@
 import secrets
 from fastapi import Request, HTTPException
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.core.redis import get_redis
 from app.core.logging import get_logger
+from app.core.session import SESSION_PREFIX  # touch_csrf_token での session 実在確認に使用
 
 logger = get_logger(__name__)
 
@@ -45,6 +47,36 @@ async def generate_csrf_token(session_id: str) -> str:
     return token
 
 
+async def touch_csrf_token(session_id: str) -> str:
+    """session が実在する場合に限り既存CSRFトークンを取得しつつTTLを延長する。
+
+    session_id が空、または `session:{session_id}` が Redis に無い場合は空文字を返す
+    (死んだ session_id cookie を攻撃者が与えても token を発行しないため)。
+    想定: session は生きているが CSRF token の 2h TTL だけ切れた場合に、
+    次回 response で新規発行して header に載せ直す。
+    """
+    if not session_id:
+        return ""
+    r = await get_redis()
+    # session 実在確認 (死 session_id への token 発行を防止)
+    if not await r.exists(f"{SESSION_PREFIX}{session_id}"):
+        return ""
+    key = f"{CSRF_PREFIX}{session_id}"
+    token = await r.get(key)
+    if not token:
+        token = secrets.token_hex(32)
+    await r.set(key, token, ex=CSRF_TTL)
+    return token
+
+
+async def delete_csrf_token(session_id: str) -> None:
+    """CSRFトークンを削除 (logout 時の掃除用)"""
+    if not session_id:
+        return
+    r = await get_redis()
+    await r.delete(f"{CSRF_PREFIX}{session_id}")
+
+
 async def validate_csrf_token(session_id: str, token: str) -> bool:
     """CSRFトークンを検証"""
     if not session_id or not token:
@@ -69,12 +101,13 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         session_id = request.cookies.get("session_id")
         if not session_id:
             logger.warning(f"CSRF検証失敗（セッションなし）: path={request.url.path}")
-            raise HTTPException(status_code=403, detail="CSRFトークンが無効です")
+            # raise ではなく return: 後段ミドルウェアが response を受け取って header 付与できるように
+            return JSONResponse(status_code=403, content={"detail": "CSRFトークンが無効です"})
 
         # ヘッダーからCSRFトークン取得
         csrf_token = request.headers.get("X-CSRF-Token", "")
         if not await validate_csrf_token(session_id, csrf_token):
             logger.warning(f"CSRF検証失敗（トークン不一致）: path={request.url.path}")
-            raise HTTPException(status_code=403, detail="CSRFトークンが無効です")
+            return JSONResponse(status_code=403, content={"detail": "CSRFトークンが無効です"})
 
         return await call_next(request)
