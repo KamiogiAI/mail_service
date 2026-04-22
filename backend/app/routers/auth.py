@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.redis import get_redis
 from app.core.session import create_session, destroy_session, refresh_session_id, get_session
-from app.core.csrf import generate_csrf_token
+from app.core.csrf import generate_csrf_token, delete_csrf_token
 from app.core.config import settings
 from app.core.rate_limit import (
     limiter,
@@ -200,6 +200,8 @@ async def logout(request: Request, response: Response, r=Depends(get_redis)):
     session_id = request.cookies.get("session_id")
     if session_id:
         await destroy_session(r, session_id)
+        # CSRF token も同時に掃除 (死 session 宛の延命を防ぐ)
+        await delete_csrf_token(session_id)
     response.delete_cookie("session_id")
     return {"message": "ログアウトしました"}
 

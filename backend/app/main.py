@@ -7,7 +7,9 @@ from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from app.core.config import settings
 from app.core.logging import setup_logging, get_logger
-from app.core.csrf import CSRFMiddleware
+import asyncio
+import redis.exceptions as redis_exceptions
+from app.core.csrf import CSRFMiddleware, touch_csrf_token
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.routers import health, auth, subscriptions, webhooks_stripe, webhooks_resend
@@ -123,6 +125,62 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-CSRF-Token"],
 )
+
+
+_CSRF_ROTATE_SKIP_PREFIXES = ("/api/webhooks/", "/static/")
+
+
+@app.middleware("http")
+async def csrf_token_rotate(request: Request, call_next):
+    """session_id がある全レスポンスで CSRF token を touch し header に載せる。
+
+    2h TTL で CSRF token が Redis から消えても、次回レスポンス (GET含む) で新規発行して
+    フロントの localStorage に伝播させ、POST/PUT/DELETE が 403 で詰まるのを防ぐ。
+    CSRFMiddleware は 403 を raise ではなく JSONResponse で返すようにしたので、
+    403 でもここで header を付けられる (POST 直後にフロントが再取得できる)。
+
+    スキップ条件: OPTIONS preflight、webhook/静的ファイル、session 不在。
+    Redis 障害時はログのみ出して response は返す (graceful degradation)。
+    """
+    response = await call_next(request)
+
+    # OPTIONS preflight と webhook/静的は rotate 不要
+    if request.method == "OPTIONS":
+        return response
+    path = request.url.path
+    if any(path.startswith(p) for p in _CSRF_ROTATE_SKIP_PREFIXES):
+        return response
+
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        return response
+
+    # login/verify-email は response.headers["X-CSRF-Token"] を handler 側で既に set 済。
+    # touch は値を変えない想定だが、上書き回避で安全側に倒す。
+    if "X-CSRF-Token" in response.headers:
+        # CDN 汚染防止で Vary だけは確実に付ける
+        _append_vary_cookie(response)
+        return response
+
+    try:
+        token = await touch_csrf_token(session_id)
+    except (redis_exceptions.RedisError, asyncio.TimeoutError, ConnectionError) as e:
+        logger.warning(f"CSRF token rotation failed: {e}")
+        return response
+
+    if token:
+        response.headers["X-CSRF-Token"] = token
+        _append_vary_cookie(response)
+    return response
+
+
+def _append_vary_cookie(response) -> None:
+    """既存 Vary と重複しない形で Cookie を追記 (CDN キャッシュ汚染防止)"""
+    existing = response.headers.get("Vary", "")
+    tokens = {t.strip() for t in existing.split(",") if t.strip()}
+    tokens.add("Cookie")
+    response.headers["Vary"] = ", ".join(sorted(tokens))
+
 
 # ルーター登録
 app.include_router(health.router)
